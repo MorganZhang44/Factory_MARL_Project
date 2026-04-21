@@ -2,32 +2,30 @@
 
 ## Overview
 
-This document defines the **Decision Making module (MARL)** in a concrete and executable way.
+This document defines the Decision module in an **implementation-ready form**.
 
-It specifies:
+The Decision module:
 
-* observation space
-* action space
-* reward design
-* training paradigm
-
-This is the **core intelligence of the system**.
+* subscribes to system state and perception output
+* produces subgoals for each agent
+* can be implemented as rule-based or MARL
 
 ---
 
-## Problem Formulation
+# Inputs (Subscriptions)
 
-* Multi-agent system (2 agents)
-* Objective: **intercept intruder**
-* Partially observable (future version), fully observable (initial version)
+Decision subscribes to:
+
+* `simulation/state`
+* `perception/target_estimate`
 
 ---
 
-## Observation Space
+# Observation Space
 
-Each agent receives:
+## Per-Agent Observation
 
-```id="obs-space"
+```text id="obs"
 [
   self_position (2),
   self_velocity (2),
@@ -40,117 +38,207 @@ Each agent receives:
 ]
 ```
 
-### Dimension
+---
+
+## Dimension
 
 * Total: **12D**
 
 ---
 
-## Action Space
+## Target Visibility Handling
 
-### Option A (Recommended – Continuous)
+If:
 
-```id="action-space"
+```text
+visible = false
+```
+
+Then:
+
+* use **last known target state**
+* optionally apply simple prediction:
+
+  * constant velocity model
+
+---
+
+# Action Space
+
+## Definition
+
+```text id="action"
 action = [x, y]
 ```
 
-* Represents **subgoal position**
-* Passed to Planning module
+---
+
+## Meaning
+
+* absolute world coordinate (NOT relative)
+* interpreted as **subgoal**
 
 ---
 
-### Option B (Alternative – Discrete)
+## Output Mapping
 
-```id="action-discrete"
-action ∈ {chase, intercept_left, intercept_right, search}
-```
+Each agent publishes:
 
----
-
-## Reward Function
-
-### Core Reward
-
-```id="reward-core"
-R = w1 * (-distance_to_target)
-  + w2 * (capture_bonus)
-  + w3 * (team_spread_bonus)
-  + w4 * (collision_penalty)
-```
-
----
-
-### Components
-
-* **Distance reward**
-
-  * Encourage getting closer to target
-
-* **Capture bonus**
-
-  * Large positive reward when interception succeeds
-
-* **Team coordination**
-
-  * Encourage agents to spread (avoid redundancy)
-
-* **Collision penalty**
-
-  * Penalize collisions or invalid movement
-
----
-
-## Training Paradigm
-
-### CTDE (Centralized Training, Decentralized Execution)
-
-* Training:
-
-  * agents access **global state**
-* Execution:
-
-  * agents act based on local observation
-
----
-
-## Policy Output
-
-Each agent outputs:
-
-```id="policy-output"
+```json id="output"
 {
+  "robot_id": "agent_i",
   "subgoal": [x, y],
-  "mode": "intercept"
+  "mode": "intercept",
+  "priority": 1
 }
 ```
 
 ---
 
-## Initial Simplification
+# Reward Function
+
+## Core Form
+
+```text id="reward"
+R = 
+  - w1 * distance_to_target
+  + w2 * capture_bonus
+  + w3 * team_spread_bonus
+  - w4 * collision_penalty
+```
+
+---
+
+## Components
+
+### Distance Reward
+
+* encourages moving toward target
+
+---
+
+### Capture Bonus
+
+Capture occurs when:
+
+```text id="capture"
+distance(agent, target) ≤ 0.5 m
+```
+
+Reward:
+
+* large positive value
+
+---
+
+### Team Spread
+
+Encourage:
+
+* agents not collapsing into same position
+
+---
+
+### Collision Penalty
+
+Penalty if:
+
+* agents collide
+* or invalid motion
+
+---
+
+# Episode Termination
+
+Episode ends when ANY condition is met:
+
+```text id="termination"
+1. capture achieved
+2. max timestep reached
+3. agent leaves map boundary
+```
+
+---
+
+# Training Paradigm
+
+## CTDE (Centralized Training, Decentralized Execution)
+
+---
+
+### Training
+
+* global state available:
+
+  * both agents
+  * target state
+
+---
+
+### Execution
+
+* each agent uses local observation
+* no direct agent communication
+
+---
+
+# Mode Field
+
+## Definition
+
+```text id="mode"
+intercept
+chase
+search
+idle
+```
+
+---
+
+## Usage
 
 Version 1:
 
-* Fully observable environment
-* Continuous action (subgoal)
-* Simple reward:
+* can be fixed = "intercept"
 
-  * distance + capture
+Future:
 
----
-
-## Future Extensions
-
-* Partial observability
-* Communication between agents
-* Role-based policies
-* Curriculum learning
+* may be predicted by policy
 
 ---
 
-## Summary
+# Initial Implementation
 
-The Decision module:
+Version 1:
 
-* maps state → subgoal
-* learns cooperative interception
-* is the **core learning component** of the system
+* rule-based decision:
+
+  * subgoal = target position
+* no MARL yet
+
+---
+
+# Consistency Requirements
+
+Decision MUST:
+
+* use only subscribed topics
+* output exactly one subgoal per agent per timestep
+* use absolute coordinates
+* follow schema in `3_interfaces.md`
+
+---
+
+# Summary
+
+Decision module:
+
+* maps observation → subgoal
+* defines agent coordination behavior
+* is the only learning-based component (future)
+
+It is designed to:
+
+* be simple initially
+* be replaceable with MARL
+* integrate seamlessly with the communication layer

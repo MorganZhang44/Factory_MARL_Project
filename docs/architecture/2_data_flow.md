@@ -2,178 +2,238 @@
 
 ## Overview
 
-This document defines how data moves between modules in the system.
+This document defines how data flows through the system using the **Core Communication Layer**.
 
-The goal is to clearly specify:
+All communication follows:
 
-* who sends data to whom
-* what type of data is transmitted
-* the overall direction of the pipeline
-
-This ensures all modules can be developed and integrated consistently.
+```id="pattern"
+Module → publish → Communication Layer → route → Module
+```
 
 ---
 
-## High-level Data Flow
+## Logical Pipeline
 
-```id="flow-diagram"
+The system follows a conceptual pipeline:
+
+```id="logical-flow"
 Simulation → Perception → Decision → Planning → Locomotion → Simulation
 ```
 
-This forms a closed loop:
-
-* the system observes the environment
-* makes decisions
-* executes actions
-* updates the environment
+This represents **data transformation order**, not direct calls.
 
 ---
 
-## Detailed Data Flow
+## Topic-Based Data Flow
 
-### 1. Simulation → Perception
+---
 
-**Description**
+## 1. Simulation → Communication Layer
 
-* Simulation provides observations and system state
+### Topic: `simulation/state`
 
-**Data**
+**Published Data**
 
-* sensor observations (or simplified state)
-* robot states (position, velocity)
-* intruder ground truth (optional for early stage)
+* robot states
+* intruder state (Version 1)
+* map / obstacle information
 * timestamp
 
 ---
 
-### 2. Perception → Decision
+### Consumed By
 
-**Description**
+* Perception
+* Decision
+* Planning
+* Locomotion
+* Logger
 
-* Perception outputs structured target estimation
+---
 
-**Data**
+## 2. Perception → Communication Layer
+
+### Topic: `perception/target_estimate`
+
+**Published Data**
 
 * target position
 * target velocity
 * confidence
 * visibility flag
-* timestamp
 
 ---
 
-### 3. Simulation → Decision (Parallel Input)
+### Consumed By
 
-**Description**
-
-* Decision may also receive global robot state directly
-
-**Data**
-
-* all robot states
-* environment/map summary
+* Decision
+* Logger
 
 ---
 
-### 4. Decision → Planning
+## 3. Decision → Communication Layer
 
-**Description**
+### Topic: `decision/subgoal`
 
-* Decision assigns subgoals and strategy
+**Published Data**
 
-**Data**
-
-* subgoal (target position or waypoint)
-* role assignment
-* priority / mode
+* subgoal (absolute position)
+* robot_id
+* mode
+* priority
 
 ---
 
-### 5. Planning → Locomotion
+### Consumed By
 
-**Description**
+* Planning
+* Logger
 
-* Planning generates executable paths
+---
 
-**Data**
+## 4. Planning → Communication Layer
 
-* path
+### Topic: `planning/path`
+
+**Published Data**
+
 * waypoint sequence
-* planning status (optional)
+* robot_id
 
 ---
 
-### 6. Locomotion → Simulation
+### Consumed By
 
-**Description**
-
-* Locomotion sends control commands to simulation
-
-**Data**
-
-* motion commands (velocity, direction, etc.)
+* Locomotion
+* Logger
 
 ---
 
-### 7. Global Logging Flow (Optional)
+## 5. Locomotion → Communication Layer
 
-All modules may send data to Logger:
+### Topic: `locomotion/motion_command`
 
-* perception outputs
-* decision outputs
-* planning results
-* robot states
-* episode results
+**Published Data**
 
----
-
-## Data Flow Characteristics
-
-### 1. Directionality
-
-* Data flows primarily in a **forward pipeline**
-* Control feedback closes the loop via Simulation
+* velocity command (vx, vy)
+* robot_id
 
 ---
 
-### 2. Synchronization (Initial Version)
+### Consumed By
 
-* All modules operate in a **synchronous loop**
-* Same timestep shared across modules
+* Simulation
+* Logger
 
 ---
 
-### 3. Central State Source
+## 6. Logger (Global Subscriber)
 
-* Simulation is the **source of truth** for:
+### Subscribes To
 
-  * robot states
+* all topics
+
+---
+
+## Data Flow Properties
+
+---
+
+### 1. Broadcast Semantics
+
+* Messages are broadcast to **all subscribers of a topic**
+* No direct addressing required
+
+---
+
+### 2. Single Source of Truth
+
+* `simulation/state` is authoritative
+* All modules must rely on it for:
+
+  * robot state
   * environment state
 
 ---
 
-### 4. Incremental Complexity
+### 3. Synchronous Processing (Version 1)
 
-* Early stage:
+* All modules operate within the same timestep
+* Execution order is enforced by the loop
+* No asynchronous buffering
 
-  * simplified perception (may use ground truth)
-* Later stage:
+---
 
-  * replace with real estimation
-  * introduce noise and uncertainty
+### 4. Message Overwrite Rule
+
+* For each topic:
+
+  * only the **latest message per timestep is used**
+* No historical buffering in Version 1
+
+---
+
+### 5. Deterministic Flow
+
+Within one timestep:
+
+```id="flow-order"
+Simulation
+  ↓
+Perception
+  ↓
+Decision
+  ↓
+Planning
+  ↓
+Locomotion
+  ↓
+Simulation (next step)
+```
+
+---
+
+## Example Flow (One Timestep)
+
+```id="example"
+1. Simulation publishes simulation/state
+2. Perception consumes → publishes target_estimate
+3. Decision consumes → publishes subgoal
+4. Planning consumes → publishes path
+5. Locomotion consumes → publishes motion_command
+6. Simulation applies command
+```
+
+---
+
+## Map and Obstacle Flow
+
+* Map and obstacle information are included in:
+
+  * `simulation/state`
+* Planning uses this for path generation
+
+---
+
+## Future Extensions
+
+* asynchronous message queues
+* multi-rate modules
+* distributed communication (ROS2 / gRPC)
+* message history buffering
 
 ---
 
 ## Summary
 
-The system follows a structured and modular data pipeline:
+The system uses a **topic-based, communication-driven data flow**:
 
-* Each module transforms data into a higher-level representation
-* Information flows consistently between modules
-* The loop enables continuous perception → decision → action
+* modules are decoupled
+* communication is standardized
+* execution remains deterministic
 
-This design ensures:
+This ensures:
 
-* clear integration points
-* minimal ambiguity between modules
-* support for incremental development
+* consistent integration
+* ease of debugging
+* scalability for future systems

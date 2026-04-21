@@ -2,207 +2,188 @@
 
 ## Overview
 
-This document defines the **high-level behavior states** of the system and how it transitions between them.
+This document defines the **high-level behavioral states** of the system.
 
-The goal is to:
+It provides:
 
-* structure agent behavior logically
-* avoid chaotic decision outputs
-* provide a clear framework for MARL policy design
+* structured behavior transitions
+* interpretable system modes
+* support for decision logic design
 
-The state machine operates at the **team / system level**, influencing how agents act collectively.
+---
+
+## Implementation Role
+
+In Version 1:
+
+> The state machine is used as a **conceptual and evaluation layer**, not a hard controller.
+
+---
+
+### Meaning
+
+* MARL policy produces actions directly
+* state machine is used to:
+
+  * interpret behavior
+  * analyze system performance
+  * optionally provide features to policy
 
 ---
 
 ## Core States
 
+---
+
 ### 1. Patrol
 
-**Description**
-
-* Default state when no target is detected
-
-**Behavior**
-
-* Agents explore the environment
-* Maintain coverage of the map
+* no target detected
+* agents explore environment
 
 ---
 
 ### 2. Detect
 
-**Description**
-
-* Target is observed for the first time
-
-**Behavior**
-
-* Initialize tracking
-* Share target information across agents
+* target becomes visible
 
 ---
 
 ### 3. Chase
 
-**Description**
-
-* Target is visible and being followed
-
-**Behavior**
-
-* Agents move toward predicted target position
-* Maintain tracking and reduce distance
+* target visible and tracked
+* agents move toward target
 
 ---
 
 ### 4. Intercept
 
-**Description**
-
-* Agents attempt to block or surround the target
-
-**Behavior**
-
-* Assign roles (e.g., chaser, blocker)
-* Move to strategic positions (not just direct pursuit)
+* agents attempt coordinated interception
 
 ---
 
 ### 5. Lost Target
 
-**Description**
-
-* Target is no longer visible
-
-**Behavior**
-
-* Use last known position and velocity
-* Predict possible target trajectory
+* target no longer visible
 
 ---
 
 ### 6. Search
 
-**Description**
-
-* Target has been lost for a period of time
-
-**Behavior**
-
-* Agents spread out to re-detect target
-* Switch from prediction to exploration
-
----
-
-## State Transitions
-
-```id="state-flow"
-Patrol → Detect → Chase → Intercept
-             ↓        ↓
-         Lost Target → Search → Patrol
-```
+* agents attempt to re-detect target
 
 ---
 
 ## Transition Conditions
 
-### Patrol → Detect
+---
 
-* target becomes visible
+### Parameters
+
+```text
+confidence_threshold = 0.7
+intercept_distance_threshold = 1.0 m
+lost_target_timeout = 2.0 s
+search_timeout = 5.0 s
+```
 
 ---
 
-### Detect → Chase
+### Transitions
 
-* target confirmed (confidence above threshold)
+**Patrol → Detect**
 
----
-
-### Chase → Intercept
-
-* distance to target below threshold
-* interception condition satisfied
+* visible = true
 
 ---
 
-### Chase → Lost Target
+**Detect → Chase**
 
-* target becomes invisible
-
----
-
-### Lost Target → Search
-
-* target not recovered within time threshold
+* confidence ≥ confidence_threshold
 
 ---
 
-### Search → Patrol
+**Chase → Intercept**
 
-* search timeout reached without detection
-
----
-
-### Lost Target → Chase
-
-* target re-detected
+* distance_to_target ≤ intercept_distance_threshold
 
 ---
 
-## State Variables (Optional)
+**Chase → Lost Target**
 
-The system may maintain:
+* visible = false
 
-* `current_state`
-* `time_in_state`
-* `last_seen_target_position`
-* `last_seen_timestamp`
+---
+
+**Lost Target → Search**
+
+* time_since_last_seen ≥ lost_target_timeout
+
+---
+
+**Search → Patrol**
+
+* search duration ≥ search_timeout
+
+---
+
+**Lost Target → Chase**
+
+* visible = true
+
+---
+
+## State Variables
+
+* current_state
+* time_in_state
+* last_seen_position
+* last_seen_timestamp
+
+---
+
+## Relationship with MARL
+
+---
+
+### Option Used (Version 1)
+
+* state is NOT enforced externally
+* MARL learns behavior implicitly
+
+---
+
+### Optional Usage
+
+State can be used as:
+
+* additional input feature
+* evaluation metric
+* debugging tool
 
 ---
 
 ## Design Notes
 
-### 1. Relationship with MARL
+* states describe **behavioral phases**
+* not all policies must explicitly use them
+* useful for:
 
-* State defines the **context** for decision making
-* MARL policy can:
-
-  * implicitly learn states
-  * or explicitly use state as input
-
----
-
-### 2. Centralized vs Distributed
-
-* State machine can be:
-
-  * centralized (single shared state)
-  * or inferred locally by each agent
-
-Initial version:
-
-* use **shared global state**
-
----
-
-### 3. Simplification Strategy
-
-Early stage:
-
-* fewer states (e.g., Patrol / Chase / Search)
-
-Later stage:
-
-* refine into full state machine
+  * reward shaping
+  * debugging
+  * visualization
 
 ---
 
 ## Summary
 
-The state machine provides:
+The state machine:
 
-* structured behavior transitions
-* clearer reasoning for decision outputs
-* a foundation for MARL training and evaluation
+* structures system behavior conceptually
+* provides interpretable transitions
+* complements MARL without restricting it
 
-It ensures the system operates in a **controlled and interpretable way**, rather than producing arbitrary actions.
+It ensures the system is:
+
+* understandable
+* debuggable
+* analyzable

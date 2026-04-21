@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a multi-agent system (2 agents) that can detect, track, and intercept an intruder in a 2D environment.
+Build a modular multi-agent system (2 agents) that can detect, track, and intercept an intruder in a 2D environment.
 
 The system integrates:
 
@@ -11,13 +11,54 @@ The system integrates:
 * Path Planning
 * Locomotion (execution)
 
-The main challenge is **system integration**, not individual modules.
+The primary challenge is **system integration across modules**, rather than individual algorithm design.
 
 ---
 
-## High-level Pipeline
+## Design Philosophy
 
+The system is designed not only for academic prototyping, but also with **future industrial integration in mind**.
+
+Key priorities:
+
+* clear module separation
+* standardized interfaces
+* replaceable components
+* scalable communication structure
+
+To achieve this, all modules communicate through a **Core Communication Layer**.
+
+---
+
+## High-level Architecture
+
+```id="arch-overview"
+                ┌──────────────────────────┐
+                │ Core Communication Layer │
+                └───────────┬──────────────┘
+                            │
+     ┌────────────┬─────────┼─────────┬────────────┐
+     │            │         │         │            │
+Simulation   Perception  Decision  Planning   Locomotion
 ```
+
+### Key Idea
+
+* Modules do **not directly call each other**
+* All interactions go through the communication layer
+* The communication layer handles:
+
+  * message passing
+  * routing
+  * interface standardization
+
+---
+
+## Functional Pipeline (Logical Flow)
+
+Although physically decoupled, the system follows this logical flow:
+
+```id="logical-flow"
 Simulation → Perception → Decision → Planning → Locomotion → Simulation
 ```
 
@@ -25,83 +66,79 @@ Simulation → Perception → Decision → Planning → Locomotion → Simulatio
 
 * **Simulation**
 
-  * Provides environment, robot dynamics, and ground truth
-  * Acts as the system runtime
+  * Generates environment and system state
 
-* **Perception / Target Estimation**
+* **Perception**
 
-  * Converts raw observations into structured target state
-  * Handles uncertainty and temporary target loss
+  * Estimates target state from observations
 
-* **Decision Making (MARL)**
+* **Decision (MARL)**
 
-  * Takes global state and assigns strategy to each agent
-  * Outputs subgoals and coordination decisions
+  * Produces coordinated strategy (subgoals)
 
-* **NavDP Path Planning**
+* **Planning**
 
-  * Converts subgoals into executable paths / waypoints
-  * Handles obstacle avoidance
+  * Converts subgoals into executable paths
 
 * **Locomotion**
 
-  * Executes movement commands
-  * Translates paths into low-level control
+  * Executes motion commands
 
 ---
 
-## Key Design Principles
+## Core Communication Layer
 
-### 1. Clear Separation of Responsibilities
+### Role
 
-Each module has a well-defined role and **does not overlap** with others
+The Core Communication Layer acts as the **central middleware** of the system.
 
----
+### Responsibilities
 
-### 2. Interface-first Design
+* message routing between modules
+* enforcing interface contracts
+* decoupling modules
+* enabling future distributed deployment
 
-All modules communicate through **well-defined interfaces**.
+### Design Principle
 
-Before implementation, we define:
-
-* What data is passed
-* Data format
-* Required fields (e.g., timestamp, robot_id)
-
-This ensures:
-
-* Parallel development
-* Easy module replacement
-* Reduced integration issues
+* **Thin layer (initial version)**
+* Only handles communication, not business logic
 
 ---
 
-### 3. Minimal Working System First
+## System Characteristics
 
-The system will be built incrementally:
+### 1. Modular
 
-* Start with simplified components (e.g., fake perception)
-* Ensure full pipeline runs end-to-end
-* Gradually replace modules with real implementations
+Each component can be:
 
----
-
-### 4. Centralized Logical Data Flow
-
-Although modules are conceptually separated, the system initially runs in a **single-machine setup** with direct data passing.
-
-Distributed communication (ROS2 / gRPC) can be added later if needed.
+* developed independently
+* replaced without breaking the system
 
 ---
 
-### 5. Decision-Centric Architecture
+### 2. Interface-driven
 
-The core intelligence lies in the **Decision Making module (MARL)**.
+All interactions are defined through:
 
-Other modules:
+* structured messages
+* standardized formats
 
-* Provide inputs (Perception)
-* Execute outputs (Planning + Locomotion)
+---
+
+### 3. Incremental Development
+
+The system is built in stages:
+
+* minimal working pipeline first
+* progressively replace simplified modules
+
+---
+
+### 4. Single-Machine Execution (Initial)
+
+* All modules run locally
+* Communication is abstracted (not physically distributed yet)
 
 ---
 
@@ -111,17 +148,19 @@ Other modules:
 
 * 2D environment
 * 2 agents + 1 intruder
-* Basic perception (can be simplified initially)
-* MARL-based decision making
-* Path planning and execution
-* End-to-end simulation loop
+* simplified perception (can use ground truth)
+* MARL decision module
+* path planning and locomotion
+* communication layer abstraction
 
-### Not Included (initially)
+---
 
-* Real robot deployment
-* Complex sensor noise modeling
-* Multi-machine distributed system
-* High-performance optimization
+### Not Included (Initial)
+
+* real robot deployment
+* distributed multi-machine system
+* advanced fault tolerance
+* high-performance optimization
 
 ---
 
@@ -129,24 +168,30 @@ Other modules:
 
 A working system where:
 
-* Agents receive environment state
-* Decision module assigns coordinated strategies
-* Agents move according to planned paths
-* Intruder can be tracked and intercepted
+* modules communicate through a unified layer
+* agents coordinate to intercept the intruder
+* the full pipeline runs end-to-end
 
 The system should be:
 
-* Modular
-* Replaceable (each module can be improved independently)
-* Extensible for future upgrades
+* modular
+* extensible
+* aligned with industrial system design practices
 
 ---
 
 ## Summary
 
-This project focuses on:
+This project focuses on building a:
 
-> Building a **modular, integrated multi-agent system**, where
-> **clear interfaces and data flow** enable reliable coordination between perception, decision, and control.
+> **modular, communication-driven multi-agent system**
 
-The priority is to **make the system work end-to-end**, then improve individual modules iteratively.
+where:
+
+* modules are loosely coupled
+* interfaces are strictly defined
+* the system can evolve from a prototype to an industrial-grade architecture
+
+The priority remains:
+
+> **Make the system run end-to-end, while maintaining clean architecture for future scalability.**

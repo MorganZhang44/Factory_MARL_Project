@@ -2,147 +2,218 @@
 
 ## Overview
 
-This document defines the **assumptions** and **constraints** of the system.
+This document defines the **assumptions and constraints** of Version 1 of the system.
 
 The goal is to:
 
-* align team understanding
-* avoid hidden inconsistencies
-* clearly separate current scope from future extensions
+* ensure consistent understanding across modules
+* eliminate ambiguity
+* define a stable development scope
 
 ---
 
-## Assumptions
-
-### 1. Environment
-
-* The system operates in a **2D map**
-* The map is bounded and known
-* Obstacles (if present) are static in Version 1
+# Assumptions
 
 ---
 
-### 2. Agents
+## 1. Environment
 
-* There are exactly **2 agents**
-* Agents have:
+* The system operates in a **2D Cartesian map**
+* Coordinate system:
 
-  * perfect self-localization (position, velocity)
-  * full access to their own state
-* Agents can move freely within the map
+  * origin at **center (0, 0)**
+  * consistent with `9_coordinate_and_units.md`
+* Map size:
 
----
-
-### 3. Intruder (Target)
-
-* There is **1 intruder**
-* Intruder follows a predefined or controllable policy
-* Intruder state (position, velocity) exists at all times (ground truth available in simulation)
+  * 20 × 20 meters
+  * range: x ∈ [-10, 10], y ∈ [-10, 10]
 
 ---
 
-### 4. Perception (Initial Version)
+## 2. Obstacles
 
-* Perception can access:
+* Obstacles are:
 
-  * ground truth intruder state (for early development)
+  * static
+  * known in advance
+* Provided through:
+
+  * `simulation/state → map_info`
+
+---
+
+## 3. Agents
+
+* Exactly **2 agents**
+* Each agent has:
+
+  * perfect self-localization
+  * full access to its own state
+* Agents operate independently but share global information via communication layer
+
+---
+
+## 4. Intruder (Target)
+
+* Single intruder
+* Intruder has:
+
+  * position and velocity at all times (ground truth exists in simulation)
+
+---
+
+### Important Clarification
+
+* In Version 1:
+
+  * `intruder_state` MAY be included in `simulation/state`
+* However:
+
+  * Decision SHOULD rely on `perception/target_estimate`
+* This ensures:
+
+  * future compatibility with partial observability
+
+---
+
+## 5. Perception
+
+* Initial version may:
+
+  * directly pass through ground truth
 * No sensor noise in Version 1
-* Target visibility can be simplified (always visible or controlled manually)
+* `visible` flag may be:
+
+  * always true (early stage)
+  * manually controlled
 
 ---
 
-### 5. Communication
+## 6. Communication
 
 * All modules run on a **single machine**
 * Communication is:
 
+  * synchronous
   * instantaneous
   * lossless
-* No delay or packet loss is considered
 
 ---
 
-### 6. Time and Execution
+## 7. Execution Model
 
-* The system runs in a **synchronous loop**
-* All modules share the same timestep
-* No asynchronous execution in Version 1
-
----
-
-### 7. Coordinate System
-
-* A global **2D Cartesian coordinate system** is used
-* All modules use the same reference frame (`frame_id = world`)
+* System runs in a **fixed timestep loop**
+* All modules operate within the same timestep
+* Message delivery happens within the same loop cycle
 
 ---
 
-## Constraints
+## 8. Coordinate and Units
 
-### 1. Scope Constraints
+* All modules MUST use:
 
-* Focus is on **system integration + decision making**
-* Not targeting:
+  * same coordinate frame
+  * same units
+* Defined in:
 
-  * real robot deployment
-  * hardware constraints
-  * real-time performance guarantees
-
----
-
-### 2. Complexity Constraints
-
-* Perception is simplified initially
-* Planning can use simple algorithms (e.g., straight-line or basic pathfinding)
-* Locomotion can use simplified motion models
+  * `9_coordinate_and_units.md`
 
 ---
 
-### 3. Resource Constraints
-
-* The system should run on a **single machine**
-* No requirement for distributed computing
-* No requirement for GPU beyond MARL training
+# Constraints
 
 ---
 
-### 4. Development Constraints
+## 1. Scope Constraints
 
-* System must support **parallel development by 3 members**
-* Interfaces must remain stable once defined
-* Modules should be independently testable
+Focus:
 
----
+* system integration
+* communication architecture
+* decision layer (MARL)
 
-### 5. Evaluation Constraints
+Not included:
 
-* Performance metrics may include:
-
-  * capture success rate
-  * time to intercept
-* No requirement for benchmarking against external systems in Version 1
+* real robot deployment
+* hardware constraints
+* real-time guarantees
 
 ---
 
-## Future Relaxations
+## 2. Complexity Constraints
 
-The following assumptions may be relaxed in later versions:
+* Perception:
 
-* Introduce **sensor noise** and partial observability
-* Move to **asynchronous communication** (ROS2 / gRPC)
-* Support **multi-machine deployment**
-* Extend to **more agents and more complex environments**
+  * simplified in Version 1
+* Planning:
+
+  * simple algorithms (straight-line / grid)
+* Locomotion:
+
+  * simplified velocity control
 
 ---
 
-## Summary
+## 3. Communication Constraints
 
-These assumptions and constraints define the **operating boundaries** of Version 1.
+* Communication layer is:
 
-They ensure:
+  * in-process
+  * lightweight
+* No:
 
-* a controlled and manageable system scope
-* consistent understanding across team members
-* a stable foundation for incremental improvements
+  * distributed scheduling
+  * network latency
+  * fault tolerance
 
-Any changes to these assumptions should be **explicitly updated in this document** before implementation.
+---
+
+## 4. Development Constraints
+
+* System must support **parallel development**
+* Interfaces must remain stable
+* Modules must be independently testable
+
+---
+
+## 5. Evaluation Constraints
+
+Metrics include:
+
+* capture success rate
+* time to intercept
+
+No requirement for:
+
+* external benchmarking
+* real-world validation
+
+---
+
+# Future Relaxations
+
+Future versions may introduce:
+
+* sensor noise
+* partial observability
+* asynchronous communication
+* multi-machine deployment
+* more agents
+* dynamic environments
+
+---
+
+# Summary
+
+This document defines the **operating boundaries of Version 1**.
+
+It ensures:
+
+* controlled system complexity
+* consistent assumptions across modules
+* a stable foundation for incremental development
+
+Any deviation from these assumptions must be:
+
+* explicitly documented
+* updated across all relevant modules

@@ -2,45 +2,78 @@
 
 ## Overview
 
-This document defines the **data interfaces between modules**.
+This document defines the **strict communication contracts** between modules.
 
-The goal is to standardize:
+All communication:
 
-* data formats
-* required fields
-* naming conventions
-
-All modules must follow these interfaces to ensure compatibility and parallel development.
+* uses **topic-based publish–subscribe**
+* follows a **standard message envelope**
+* must comply with **schema + semantic rules**
 
 ---
 
-## Global Conventions
+# 1. Message Envelope
 
-All messages should include:
+All messages MUST follow this format:
 
 ```json
 {
+  "message_id": "uuid",
   "timestamp": float,
-  "frame_id": "world",
-  "robot_id": "agent_1"   // if applicable
+  "topic": "string",
+  "source_module": "string",
+  "payload": {}
 }
 ```
 
-### Notes
+---
 
-* `timestamp`: simulation time (seconds)
-* `frame_id`: coordinate frame (default: world)
-* `robot_id`: required when referring to a specific agent
+## Field Definitions
+
+| Field         | Required | Description               |
+| ------------- | -------- | ------------------------- |
+| message_id    | YES      | unique id                 |
+| timestamp     | YES      | simulation time (seconds) |
+| topic         | YES      | topic name                |
+| source_module | YES      | publisher module          |
+| payload       | YES      | message content           |
 
 ---
 
-# 1. Simulation → Perception
+## Rules
 
-### Message: Observation
+* `target_module` is NOT used (broadcast model)
+* routing is based on **topic only**
+* payload MUST NOT be modified by communication layer
+
+---
+
+# 2. Topic Definitions
+
+```text
+simulation/state
+perception/target_estimate
+decision/subgoal
+planning/path
+locomotion/motion_command
+```
+
+---
+
+# 3. Message Schemas
+
+---
+
+## 3.1 Simulation State
+
+### Topic
+
+`simulation/state`
+
+### Schema
 
 ```json
 {
-  "timestamp": float,
   "robot_states": [
     {
       "robot_id": "agent_1",
@@ -51,24 +84,40 @@ All messages should include:
   "intruder_state": {
     "position": [x, y],
     "velocity": [vx, vy]
+  },
+  "map_info": {
+    "obstacles": []
   }
 }
 ```
 
-### Notes
+---
 
-* `intruder_state` can be hidden or noisy in later versions
-* Can be simplified in early stage (direct ground truth)
+### Required Fields
+
+* robot_states
+* intruder_state (Version 1 only)
+* map_info
 
 ---
 
-# 2. Perception → Decision
+### Notes
 
-### Message: TargetEstimate
+* In future versions:
+
+  * `intruder_state` may NOT be available to Decision
+* map_info is static in Version 1
+
+---
+
+## 3.2 Target Estimate
+
+### Topic
+
+`perception/target_estimate`
 
 ```json
 {
-  "timestamp": float,
   "target_id": "intruder_1",
   "position": [x, y],
   "velocity": [vx, vy],
@@ -77,56 +126,34 @@ All messages should include:
 }
 ```
 
-### Notes
+---
 
-* `visible = false` indicates temporary loss
-* `confidence` used for decision robustness
+### Required Fields
+
+* position
+* velocity
+* confidence
+* visible
 
 ---
 
-# 3. Simulation → Decision
+### Semantic Rules
 
-### Message: RobotState
+* if `visible = false`:
 
-```json
-{
-  "timestamp": float,
-  "robot_states": [
-    {
-      "robot_id": "agent_1",
-      "position": [x, y],
-      "velocity": [vx, vy]
-    }
-  ]
-}
-```
+  * position = last known or predicted
+  * confidence < threshold
 
 ---
 
-### Message: MapInfo
+## 3.3 Decision Output
+
+### Topic
+
+`decision/subgoal`
 
 ```json
 {
-  "map_size": [width, height],
-  "obstacles": [
-    {
-      "type": "rectangle",
-      "position": [x, y],
-      "size": [w, h]
-    }
-  ]
-}
-```
-
----
-
-# 4. Decision → Planning
-
-### Message: Subgoal
-
-```json
-{
-  "timestamp": float,
   "robot_id": "agent_1",
   "subgoal": [x, y],
   "mode": "intercept",
@@ -134,20 +161,41 @@ All messages should include:
 }
 ```
 
-### Notes
+---
 
-* `mode` examples: "intercept", "block", "search"
-* `priority` used if multiple tasks exist
+### Required Fields
+
+* robot_id
+* subgoal
 
 ---
 
-# 5. Planning → Locomotion
+### Enum: mode
 
-### Message: Path
+```text
+intercept
+chase
+search
+idle
+```
+
+---
+
+### Semantic Rules
+
+* subgoal is **absolute world coordinate**
+* one message per robot per timestep
+
+---
+
+## 3.4 Planning Output
+
+### Topic
+
+`planning/path`
 
 ```json
 {
-  "timestamp": float,
   "robot_id": "agent_1",
   "waypoints": [
     [x1, y1],
@@ -158,76 +206,109 @@ All messages should include:
 
 ---
 
-# 6. Locomotion → Simulation
+### Required Fields
 
-### Message: MotionCommand
+* robot_id
+* waypoints
+
+---
+
+### Rules
+
+* waypoints MUST NOT be empty
+* first waypoint should be near current position
+
+---
+
+## 3.5 Motion Command
+
+### Topic
+
+`locomotion/motion_command`
 
 ```json
 {
-  "timestamp": float,
   "robot_id": "agent_1",
   "velocity": [vx, vy]
 }
 ```
 
-### Notes
+---
 
-* Can be extended to include acceleration or heading
-* Simplified in early stage
+### Required Fields
+
+* robot_id
+* velocity
 
 ---
 
-# 7. Logger Interfaces (Optional)
+### Rules
 
-### Message: LogEntry
-
-```json
-{
-  "timestamp": float,
-  "module": "decision",
-  "data": {}
-}
-```
+* velocity is in **world frame**
+* units: m/s
 
 ---
 
-# Data Types Summary
+# 4. Subscription Table
 
-| Field      | Type           | Description           |
-| ---------- | -------------- | --------------------- |
-| position   | [float, float] | 2D coordinates        |
-| velocity   | [float, float] | velocity vector       |
-| confidence | float          | estimation confidence |
-| visible    | bool           | target visibility     |
-| waypoints  | list           | sequence of positions |
+| Module     | Subscribes To                                |
+| ---------- | -------------------------------------------- |
+| Perception | simulation/state                             |
+| Decision   | simulation/state, perception/target_estimate |
+| Planning   | decision/subgoal, simulation/state           |
+| Locomotion | planning/path, simulation/state              |
+| Simulation | locomotion/motion_command                    |
+| Logger     | all topics                                   |
 
 ---
 
-# Version Notes
+# 5. Communication Semantics
 
-## Version 1 (Current)
+---
 
-* Simple 2D coordinates
-* Perfect or near-perfect perception allowed
-* Synchronous loop
-* No strict serialization required (can use Python objects)
+## Broadcast Model
 
-## Future Versions
+* all messages are broadcast
+* subscribers filter by topic
 
-* Add noise and uncertainty to perception
-* Extend message formats (orientation, acceleration)
-* Introduce asynchronous communication (ROS2 / gRPC)
+---
+
+## One Message per Timestep Rule
+
+* each module publishes at most **one message per topic per timestep**
+
+---
+
+## Overwrite Rule
+
+* only the **latest message in a timestep is used**
+* no historical buffering
+
+---
+
+## Processing Order
+
+Defined in `8_execution_loop.md`
+
+---
+
+# 6. Validation Rules
+
+Each module MUST ensure:
+
+* payload matches schema
+* required fields exist
+* values are in valid range
+* coordinate frame is consistent
 
 ---
 
 ## Summary
 
-These interfaces define the **contract between modules**.
+This interface layer defines:
 
-They ensure:
+* strict message format
+* unambiguous data contracts
+* deterministic communication behavior
 
-* consistency in data exchange
-* independence of module implementation
-* easier integration and debugging
-
-All modules must adhere to these definitions to maintain system stability.
+It is the **core guarantee of system consistency**.

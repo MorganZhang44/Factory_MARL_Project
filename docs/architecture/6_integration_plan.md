@@ -2,224 +2,254 @@
 
 ## Overview
 
-This document defines how the system will be built and integrated over time.
+This document defines how the system will be integrated step by step.
 
-The goal is to:
+The strategy:
 
-* ensure the system works **end-to-end as early as possible**
-* allow parallel development across modules
-* reduce integration risk
-
-The strategy is:
-
-> **Build a minimal working pipeline first, then progressively replace components with more advanced implementations**
+> **Build communication backbone first, then plug modules into it incrementally**
 
 ---
 
-## Guiding Principles
-
-### 1. End-to-End First
-
-* Always prioritize having a **fully connected pipeline**
-* Even if modules are simplified or fake
+# Guiding Principles
 
 ---
 
-### 2. Incremental Replacement
+## 1. Communication First
 
-* Start with simple / placeholder implementations
-* Replace modules one by one with real versions
-
----
-
-### 3. Stable Interfaces
-
-* Interfaces defined in `3_interfaces.md` should remain stable
-* Changes must be coordinated across modules
+* Build Core Communication Layer before modules
+* All modules MUST integrate through it
 
 ---
 
-### 4. Independent Testing
+## 2. End-to-End Early
 
-* Each module should be testable in isolation
-* Integration happens after basic functionality is verified
-
----
-
-## Integration Stages
+* System must run end-to-end as early as possible
+* even with simplified modules
 
 ---
 
-## Stage 1: Minimal Pipeline (Baseline System)
+## 3. Stable Interfaces
 
-### Goal
+* Interfaces in `3_interfaces.md` are fixed contracts
+* changes must be coordinated
 
-Get a full loop running:
+---
 
-```id="stage1-flow"
-Simulation → Decision → Action → Simulation
+## 4. Always Runnable
+
+* system must run at every stage
+* no broken intermediate states
+
+---
+
+# Integration Stages
+
+---
+
+## Stage 1: Communication Layer Skeleton
+
+### Tasks
+
+* implement publish / subscribe
+* implement topic routing
+* implement message envelope
+
+---
+
+### Done When
+
+* one module can publish a message
+* another module receives it via topic
+* message structure preserved
+* routing is deterministic
+
+---
+
+## Stage 2: Simulation Integration
+
+### Tasks
+
+* publish `simulation/state`
+* subscribe to `locomotion/motion_command`
+
+---
+
+### Done When
+
+* simulation publishes state every timestep
+* simulation correctly applies motion commands
+* state updates reflect actions
+
+---
+
+## Stage 3: Perception Integration
+
+### Tasks
+
+* subscribe to `simulation/state`
+* publish `perception/target_estimate`
+
+---
+
+### Done When
+
+* target estimate is generated each timestep
+* decision can consume it
+* confidence / visible fields valid
+
+---
+
+## Stage 4: Decision Integration
+
+### Tasks
+
+* subscribe to:
+
+  * `simulation/state`
+  * `perception/target_estimate`
+* publish `decision/subgoal`
+
+---
+
+### Done When
+
+* one subgoal per agent per timestep
+* subgoal is valid coordinate
+* downstream modules can consume it
+
+---
+
+## Stage 5: Planning Integration
+
+### Tasks
+
+* subscribe to `decision/subgoal`
+* subscribe to `simulation/state`
+* publish `planning/path`
+
+---
+
+### Done When
+
+* valid waypoint sequence generated
+* no empty paths
+* respects obstacles
+
+---
+
+## Stage 6: Locomotion Integration
+
+### Tasks
+
+* subscribe to `planning/path`
+* publish `locomotion/motion_command`
+
+---
+
+### Done When
+
+* agents move according to path
+* movement is stable
+* closed loop is achieved
+
+---
+
+## Stage 7: MARL Integration
+
+### Tasks
+
+* replace rule-based decision
+* integrate policy
+* ensure interface unchanged
+
+---
+
+### Done When
+
+* MARL outputs valid subgoals
+* no change required in planning / locomotion
+* system runs end-to-end
+
+---
+
+## Stage 8: Logging and Evaluation
+
+### Tasks
+
+* subscribe Logger to all topics
+* record system data
+
+---
+
+### Done When
+
+* logs are complete
+* replay possible
+* metrics computed
+
+---
+
+# Integration Order
+
+```text id="order"
+Communication → Simulation → Perception → Decision → Planning → Locomotion → MARL → Evaluation
 ```
 
-### Tasks
+---
 
-* Build simple 2D simulation
-* Provide direct access to intruder position (no perception module yet)
-* Implement simple decision logic:
-
-  * e.g., agents move directly toward intruder
-* Implement basic movement (direct velocity control)
-
-### Outcome
-
-* Agents can move and chase intruder
-* Full loop runs without errors
+# Parallel Development Strategy
 
 ---
 
-## Stage 2: Introduce Perception Layer
+## Member Split
 
-### Goal
-
-Insert perception into pipeline:
-
-```id="stage2-flow"
-Simulation → Perception → Decision → Action → Simulation
-```
-
-### Tasks
-
-* Implement Perception module interface
-* Initially pass ground truth through perception
-* Add basic visibility / confidence logic
-
-### Outcome
-
-* Decision module no longer depends on ground truth directly
-* Clear separation between perception and decision
+* Member A → Perception
+* Member B → Decision (MARL)
+* Member C → Planning + Locomotion
 
 ---
 
-## Stage 3: Add Planning Module
+## Shared Responsibility
 
-### Goal
-
-Insert planning layer:
-
-```id="stage3-flow"
-Simulation → Perception → Decision → Planning → Locomotion → Simulation
-```
-
-### Tasks
-
-* Implement simple path planning (e.g., straight line or grid-based)
-* Convert subgoal into waypoint sequence
-* Update locomotion to follow waypoints
-
-### Outcome
-
-* Agents move via planned paths instead of direct commands
-* System structure becomes complete
+* communication layer
+* interfaces
+* integration testing
 
 ---
 
-## Stage 4: Replace Decision with MARL
-
-### Goal
-
-Integrate MARL into decision layer
-
-### Tasks
-
-* Define observation space based on interfaces
-* Define action space (subgoal / role output)
-* Implement training loop
-* Replace rule-based decision with MARL policy
-
-### Outcome
-
-* Agents exhibit learned cooperative behavior
-* Interception strategies improve over time
+# Integration Checkpoints
 
 ---
 
-## Stage 5: Improve Realism
-
-### Goal
-
-Make system more realistic and robust
-
-### Tasks
-
-* Add noise or partial observability to perception
-* Improve target estimation (handle lost target)
-* Refine planning (avoid obstacles, smoother paths)
-* Improve locomotion model
-
-### Outcome
-
-* System handles more complex scenarios
-* Behavior becomes more robust
+1. Communication works
+2. Simulation runs
+3. Perception produces estimates
+4. Decision outputs subgoals
+5. Planning outputs paths
+6. Locomotion closes loop
+7. MARL replaces logic
 
 ---
 
-## Stage 6: Evaluation and Benchmarking
+# Definition of Integrated System
 
-### Goal
+System is integrated when:
 
-Measure system performance
-
-### Tasks
-
-* Define metrics:
-
-  * capture success rate
-  * time to intercept
-* Run multiple episodes
-* Log and analyze results
-
-### Outcome
-
-* Quantitative understanding of system performance
-* Comparison between different strategies (e.g., rule-based vs MARL)
+* all modules use communication layer
+* no direct calls exist
+* full loop runs
+* outputs are valid and consistent
 
 ---
 
-## Suggested Timeline (Example)
+# Summary
 
-| Week | Focus                            |
-| ---- | -------------------------------- |
-| 1    | Stage 1 (Minimal pipeline)       |
-| 2    | Stage 2 (Perception integration) |
-| 3    | Stage 3 (Planning integration)   |
-| 4    | Stage 4 (MARL integration)       |
-| 5    | Stage 5 (Refinement)             |
-| 6    | Stage 6 (Evaluation & report)    |
+This plan ensures:
 
----
+* controlled system growth
+* continuous functionality
+* minimal integration risk
 
-## Responsibilities (Optional)
+The key idea:
 
-Each member can focus on:
-
-* Perception / estimation
-* Decision (MARL)
-* Planning + locomotion + integration
-
-All members should:
-
-* follow interface definitions
-* test integration regularly
-
----
-
-## Summary
-
-This integration plan ensures:
-
-* early system functionality
-* controlled increase in complexity
-* reduced risk of integration failure
-
-The key idea is:
-
-> **Always keep the system runnable, even if parts are simplified**
+> **Build small, validate early, integrate continuously**

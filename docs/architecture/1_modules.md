@@ -2,9 +2,25 @@
 
 ## Overview
 
-This document defines the core modules in the system, including their roles, inputs, outputs, and current implementation scope.
+This document defines all core modules in the system, including their roles, inputs, outputs, and interaction patterns.
 
-The goal is to clearly specify how information flows through the system and what each module is responsible for.
+All modules:
+
+* communicate **only through the Core Communication Layer**
+* do NOT directly call each other
+* operate within a **synchronous execution loop (Version 1)**
+
+---
+
+## Module List
+
+* Simulation
+* Perception / Target Estimation
+* Decision Making
+* NavDP Path Planning
+* Locomotion
+* Core Communication Layer
+* Logger / Replay / Evaluation
 
 ---
 
@@ -13,26 +29,27 @@ The goal is to clearly specify how information flows through the system and what
 ### Role
 
 * Provide the 2D environment
-* Manage agents and intruder states
-* Generate observations and ground truth
+* Maintain ground-truth state of:
+
+  * agents
+  * intruder
+  * map / obstacles
 * Control episode lifecycle (reset, step, termination)
 
-### Input
+### Input (via Communication Layer)
 
-* motion commands from Locomotion
-* control signals (reset, pause, resume)
+* `locomotion/motion_command`
+* control signals (reset, pause)
 
-### Output
+### Output (via Communication Layer)
 
-* sensor observations (or simplified state)
-* robot states (position, velocity)
-* intruder ground truth
-* episode status
+* `simulation/state`
 
-### Current Version Notes
+### Notes
 
-* Runs in a simplified 2D environment
-* Can provide direct access to ground truth (for early-stage testing)
+* Acts as **single source of truth**
+* In Version 1, may expose intruder ground truth for development convenience
+* Responsible for applying actions at each timestep
 
 ---
 
@@ -40,27 +57,26 @@ The goal is to clearly specify how information flows through the system and what
 
 ### Role
 
-* Estimate intruder state from observations
-* Handle uncertainty and temporary target loss
-* Output structured target information
+* Convert raw simulation state into **target estimate**
+* Handle visibility and uncertainty
 
 ### Input
 
-* sensor observations (camera, lidar, etc. or simplified inputs)
-* robot states
-* timestamp
+* `simulation/state`
 
 ### Output
 
-* target position
-* target velocity
-* confidence score
-* visibility flag
+* `perception/target_estimate`
 
-### Current Version Notes
+### Notes
 
-* Can initially use ground truth or simplified estimation
-* Will be replaced with a more realistic estimation module later
+* In Version 1:
+
+  * may directly pass through ground truth
+* In future:
+
+  * must handle partial observability
+  * estimate target state from sensor data
 
 ---
 
@@ -68,27 +84,23 @@ The goal is to clearly specify how information flows through the system and what
 
 ### Role
 
-* Perform mid-level decision making for the team
-* Assign strategy and coordination across agents
-* Core module for MARL integration
+* Generate coordinated strategy for agents
+* Core module for MARL
 
 ### Input
 
-* target estimation (position, velocity, confidence)
-* robot states (all agents)
-* map or environment summary
-* optional history/context
+* `simulation/state`
+* `perception/target_estimate`
 
 ### Output
 
-* subgoal for each agent (e.g., waypoint or target position)
-* role assignment (e.g., chaser, blocker)
-* priority or task mode
+* `decision/subgoal`
 
-### Current Version Notes
+### Notes
 
-* Main focus of the project (MARL)
-* Can start with simple rule-based logic before integrating MARL
+* Produces **one subgoal per agent per timestep**
+* Initial version may use rule-based logic
+* Later replaced by MARL policy
 
 ---
 
@@ -97,25 +109,25 @@ The goal is to clearly specify how information flows through the system and what
 ### Role
 
 * Convert subgoals into executable paths
-* Generate waypoint sequences for navigation
-* Handle obstacle avoidance in the environment
+* Generate waypoint sequences
+* Handle obstacle avoidance
 
 ### Input
 
-* current robot state
-* subgoal from Decision Making
-* local map or obstacle information
+* `decision/subgoal`
+* `simulation/state` (for map / obstacle info)
 
 ### Output
 
-* path (global or local)
-* waypoint sequence
-* planning status (optional)
+* `planning/path`
 
-### Current Version Notes
+### Notes
 
-* Focuses only on path planning (no control)
-* Can start with simple straight-line or grid-based planning
+* Path is a sequence of waypoints
+* Initial version may use:
+
+  * straight-line
+  * simple grid-based planning
 
 ---
 
@@ -123,71 +135,111 @@ The goal is to clearly specify how information flows through the system and what
 
 ### Role
 
-* Execute movement based on planned paths
-* Convert waypoints into motion commands
-* Handle low-level movement logic
+* Execute movement commands
+* Convert paths into motion control
 
 ### Input
 
-* path or waypoint sequence
-* current robot state
+* `planning/path`
+* `simulation/state`
 
 ### Output
 
-* motion commands (velocity, direction, etc.)
-* execution status
+* `locomotion/motion_command`
 
-### Current Version Notes
+### Notes
 
-* Can initially use simplified motion (direct movement to waypoint)
-* No need for complex control at early stage
+* Motion command is **velocity-based (vx, vy)**
+* Simplified control in Version 1
 
 ---
 
-## 6. Logger / Replay / Evaluation
+## 6. Core Communication Layer
 
 ### Role
 
-* Record system events and data
-* Support experiment replay
-* Provide evaluation metrics
+* Central middleware for all module interaction
+
+### Responsibilities
+
+* message routing (topic-based)
+* publish / subscribe mechanism
+* message validation (basic)
+* enforcing interface schema
 
 ### Input
 
-* system states (robots, intruder)
-* perception outputs
-* decision outputs
-* planning results
-* locomotion outputs
+* messages published by modules
 
 ### Output
 
-* logs (for debugging)
+* routed messages to subscribers
+
+---
+
+### Communication Model (Version 1)
+
+* **Publish–Subscribe**
+* Topic-based routing
+* Broadcast to all subscribers of a topic
+
+---
+
+### Execution Model
+
+* Runs **in-process (single machine)**
+* Acts as a **message dispatcher**
+* Messages are delivered within the same timestep
+
+---
+
+### Non-Responsibilities (Important)
+
+The communication layer does NOT:
+
+* perform any domain logic
+* modify payload content
+* make decisions
+* maintain simulation state
+
+---
+
+## 7. Logger / Replay / Evaluation
+
+### Role
+
+* Record system behavior
+* Support replay and evaluation
+
+### Input
+
+* subscribes to **all topics**
+
+### Output
+
+* logs
 * replay data
-* evaluation results (e.g., success rate, capture time)
+* evaluation metrics
 
-### Current Version Notes
+### Notes
 
-* Does not need to be fully implemented in early stage
-* Basic logging is sufficient initially
+* Minimal logging sufficient in Version 1
+* Extended evaluation added later
 
 ---
 
 ## Summary
 
-The system is composed of modular components connected through a clear data flow:
-
-Simulation → Perception → Decision → Planning → Locomotion → Simulation
+The system consists of modular components connected via a **Core Communication Layer**.
 
 Each module:
 
-* has a well-defined role
-* processes structured inputs
-* produces outputs for the next stage
+* consumes well-defined topics
+* produces structured messages
+* operates independently
 
-The design prioritizes:
+This design ensures:
 
 * modularity
-* clarity of data flow
-* ease of integration
-* incremental development
+* scalability
+* compatibility with industrial architectures
