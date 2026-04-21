@@ -1,0 +1,111 @@
+# Execution Loop
+
+## Overview
+
+This document defines how the system runs at each timestep.
+
+It provides a **code-level view** of system execution.
+
+---
+
+## Main Loop
+
+```python id="main-loop"
+while not done:
+
+    # 1. Simulation step
+    sim_state = simulation.step()
+
+    # 2. Perception
+    target_estimate = perception(sim_state)
+
+    # 3. Decision
+    subgoals = decision(target_estimate, sim_state.robot_states)
+
+    # 4. Planning
+    paths = planner(subgoals, sim_state)
+
+    # 5. Locomotion
+    actions = controller(paths)
+
+    # 6. Apply actions
+    simulation.apply(actions)
+```
+
+---
+
+## Step-by-Step Description
+
+### 1. Simulation
+
+* Update environment
+* Output current state
+
+---
+
+### 2. Perception
+
+* Convert raw state → target estimate
+
+---
+
+### 3. Decision
+
+* Compute subgoal for each agent
+
+---
+
+### 4. Planning
+
+* Convert subgoal → path
+
+---
+
+### 5. Locomotion
+
+* Convert path → motion commands
+
+---
+
+### 6. Apply Actions
+
+* Send commands back to simulation
+
+---
+
+## Timing Model
+
+* Fixed timestep (e.g., 10 Hz)
+* All modules run synchronously
+
+---
+
+## Minimal Working Version
+
+Early stage:
+
+```python id="simple-loop"
+target = sim.get_intruder()
+
+subgoal = target.position
+
+action = move_towards(subgoal)
+```
+
+---
+
+## Debug Strategy
+
+* Print/log each module output
+* Verify each stage independently
+* Replay trajectories
+
+---
+
+## Summary
+
+This loop ensures:
+
+* consistent execution order
+* predictable data flow
+* easy debugging and testing

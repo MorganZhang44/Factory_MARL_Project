@@ -1,0 +1,36 @@
+env:
+  map_size: 20.0
+  map_half: 10.0
+  n_agents: 2
+  obs_dim: 13                # 12D state + 1D agent_id → asymmetric roles
+  max_steps: 500
+  dt: 0.1
+  capture_radius: 1.0
+  agent_max_speed: 1.5
+  intruder_speed: 1.0
+  agent_radius: 0.3
+  grid_resolution: 0.5
+
+mappo:
+  lr_actor: 3.0e-4
+  lr_critic: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  n_epochs: 10
+  rollout_steps: 2048
+  mini_batch_size: 256
+  entropy_coeff: 0.01
+  value_loss_coeff: 0.5
+  max_grad_norm: 0.5
+  total_timesteps: 3_000_000
+  eval_interval: 10_000
+  save_interval: 100_000
+
+reward:
+  w_distance: 0.5
+  w_capture: 200.0
+  w_spread: 0.0
+  w_step: -0.02
+  w_proximity: -3.0         # penalty when agents < separation_threshold apart
+  separation_threshold: 2.5 # metres — agents must stay this far apart
