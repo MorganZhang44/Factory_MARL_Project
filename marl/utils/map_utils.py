@@ -1,9 +1,26 @@
 """
 map_utils.py
-Obstacle definitions extracted from isaac/scenes/warehouse_scene_cfg.py.
-Provides collision checking and occupancy grid for A* path planning.
+Obstacle definitions for the MARL pursuit environment.
 
-Coordinate frame: world origin at (0, 0), range [-10, +10] m (both axes).
+Scene: SLAM-scanned scene (isaac/scenes/slam_scene_cfg.py)
+       The scene geometry is contained in slam_scene.usda (imported USD).
+
+Coordinate frame:
+    World origin at (0, 0); x ∈ [-10, +10] m, y ∈ [-10, +10] m.
+
+NOTE ON INTERIOR OBSTACLES:
+    The new SLAM scene loads obstacles from a pre-built USD file
+    (slam_scene.usda). Since the exact obstacle coordinates are
+    embedded in the USD rather than defined as Python constants,
+    the interior obstacle list below is intentionally left EMPTY.
+
+    Once the SLAM map is exported (e.g. as a 2-D occupancy grid or
+    a list of bounding boxes), populate INTERIOR_OBSTACLES and
+    PILLARS accordingly to give the A* planner accurate collision
+    information.
+
+    For now, A* operates with only perimeter walls, which is
+    conservative but correct (it will never plan through real walls).
 """
 from __future__ import annotations
 
@@ -41,37 +58,30 @@ class CircleObstacle:
 
 
 # ---------------------------------------------------------------------------
-# Scene obstacles (from warehouse_scene_cfg.py)
-# WALL_THICKNESS=0.3, SCENE_SIZE=20, PILLAR_RADIUS=0.25
+# Scene obstacles (SLAM scene)
 # ---------------------------------------------------------------------------
 
+# Perimeter boundary — 20 × 20 m enclosure (always present)
+WALL_THICKNESS = 0.3
+
 PERIMETER_WALLS: List[RectObstacle] = [
-    RectObstacle(cx=0.0,   cy=10.0,  w=20.3, h=0.3),   # North
-    RectObstacle(cx=0.0,   cy=-10.0, w=20.3, h=0.3),   # South
-    RectObstacle(cx=10.0,  cy=0.0,   w=0.3,  h=20.0),  # East
-    RectObstacle(cx=-10.0, cy=0.0,   w=0.3,  h=20.0),  # West
+    RectObstacle(cx=0.0,   cy=10.0,  w=20.3, h=WALL_THICKNESS),   # North
+    RectObstacle(cx=0.0,   cy=-10.0, w=20.3, h=WALL_THICKNESS),   # South
+    RectObstacle(cx=10.0,  cy=0.0,   w=WALL_THICKNESS, h=20.0),   # East
+    RectObstacle(cx=-10.0, cy=0.0,   w=WALL_THICKNESS, h=20.0),   # West
 ]
 
-INTERIOR_WALLS: List[RectObstacle] = [
-    RectObstacle(cx=-3.0, cy=3.0,  w=6.0, h=0.3),  # InteriorWall1 (horizontal)
-    RectObstacle(cx=4.0,  cy=-2.5, w=0.3, h=5.0),  # InteriorWall2 (vertical)
-    RectObstacle(cx=2.0,  cy=-5.0, w=4.0, h=0.3),  # InteriorWall3 (horizontal)
-]
+# ── Interior obstacles (from SLAM USD) ────────────────────────────────────
+# TODO: populate once slam_scene.usda obstacle data is exported.
+# Example format:
+#   RectObstacle(cx=<x>, cy=<y>, w=<width>, h=<height>)
+#   CircleObstacle(cx=<x>, cy=<y>, r=<radius>)
 
-PILLARS: List[CircleObstacle] = [
-    CircleObstacle(cx=-5.0, cy=-5.0, r=0.25),  # Pillar1
-    CircleObstacle(cx=5.0,  cy=5.0,  r=0.25),  # Pillar2
-    CircleObstacle(cx=-2.0, cy=7.0,  r=0.25),  # Pillar3
-    CircleObstacle(cx=7.0,  cy=-7.0, r=0.25),  # Pillar4
-]
+INTERIOR_WALLS: List[RectObstacle] = []   # ← fill from SLAM map data
+PILLARS:        List[CircleObstacle] = [] # ← fill from SLAM map data
+BOXES:          List[RectObstacle] = []   # ← fill from SLAM map data
 
-BOXES: List[RectObstacle] = [
-    RectObstacle(cx=2.0,  cy=6.0,  w=1.0, h=1.0),  # Box1 + BoxStack1 (same footprint)
-    RectObstacle(cx=-6.0, cy=-2.0, w=1.5, h=1.0),  # Box2
-    RectObstacle(cx=-3.0, cy=-7.0, w=2.0, h=1.5),  # Box3
-    RectObstacle(cx=6.5,  cy=2.0,  w=1.0, h=1.0),  # Box4
-]
-
+# Combined lists used by ObstacleMap
 ALL_RECTS:   List[RectObstacle]   = PERIMETER_WALLS + INTERIOR_WALLS + BOXES
 ALL_CIRCLES: List[CircleObstacle] = PILLARS
 
@@ -84,7 +94,7 @@ class ObstacleMap:
     """
     Provides:
       - Continuous collision checking (with agent-radius inflation)
-      - Pre-built binary occupancy grid for A* planning
+      - Pre-built binary occupancy grid for A* path planning
     """
 
     def __init__(
@@ -96,7 +106,7 @@ class ObstacleMap:
         self.map_half     = map_half
         self.resolution   = resolution
         self.agent_radius = agent_radius
-        self.grid_size    = int(round(2 * map_half / resolution))  # 40 cells @ 0.5 m
+        self.grid_size    = int(round(2 * map_half / resolution))
 
         self._rects   = ALL_RECTS
         self._circles = ALL_CIRCLES
@@ -108,7 +118,7 @@ class ObstacleMap:
     # ------------------------------------------------------------------
 
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
-        """World (m) → (row, col). Row increases with y."""
+        """World (m) → (row, col). Row increases with +y."""
         col = int((x + self.map_half) / self.resolution)
         row = int((y + self.map_half) / self.resolution)
         col = int(np.clip(col, 0, self.grid_size - 1))
