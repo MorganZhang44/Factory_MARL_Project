@@ -20,7 +20,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Dict, List, Optional, Tuple
 
-from ..utils.map_utils import ObstacleMap
+from isaac.scenes.slam_scene_cfg import ObstacleMap
 from ..utils.astar import astar
 from ..rewards.pursuit_reward import PursuitReward
 

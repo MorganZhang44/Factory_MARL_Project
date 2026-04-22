@@ -19,7 +19,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from marl.envs.pursuit_env import PursuitEnv
-from marl.utils.map_utils import ObstacleMap
+from isaac.scenes.slam_scene_cfg import ObstacleMap
 from marl.utils.astar import astar
 
 
@@ -43,7 +43,7 @@ def test_obstacle_map():
     grid = om.get_grid()
     gs   = int(2 * cfg["env"]["map_half"] / cfg["env"]["grid_resolution"])
     assert grid.shape == (gs, gs), f"Grid shape mismatch: {grid.shape}"
-    assert grid.max() == 1, "No obstacles found – check map_utils"
+    assert grid.max() == 1, "No obstacles found – check slam_scene_cfg"
     # Centre of map should be free
     rc = om.world_to_grid(0.0, 0.0)
     assert grid[rc] == 0, "Map centre should be obstacle-free"
