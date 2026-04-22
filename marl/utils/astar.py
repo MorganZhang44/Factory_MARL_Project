@@ -9,7 +9,7 @@ import heapq
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
-from isaac.scenes.slam_scene_cfg import ObstacleMap
+from .map_utils import ObstacleMap
 
 
 # 8-connected grid: (delta_row, delta_col, cost)

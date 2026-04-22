@@ -2,15 +2,15 @@
 pursuit_env.py
 2D multi-agent pursuit environment (Gymnasium-compatible).
 
-Mirrors the Isaac Lab SLAM scene (isaac/scenes/slam_scene_cfg.py):
+Mirrors the Isaac Lab warehouse scene (warehouse_scene_cfg.py):
   - 20 x 20 m map, origin at (0, 0), range [-10, +10]
-  - 2 Unitree Go2 agents (random spawn, min 2m apart)
-  - 1 Humanoid intruder (H1, random spawn, min 3m from agents)
+  - 2 Unitree Go2 agents (Dog 1: start (3,3), Dog 2: start (-3,-3))
+  - 1 Humanoid suspect (start (5,0)) moving with random walk
 
 MARL interface (per step):
-  obs    : np.ndarray  (n_agents, 13)  [agent_id + 12-D state]
-  action : np.ndarray  (n_agents, 2)   subgoal offset [dx, dy] in metres
-  reward : np.ndarray  (n_agents,)     shared team reward
+  obs    : np.ndarray  (n_agents, 12)
+  action : np.ndarray  (n_agents, 2)  ← subgoal [x, y] in world frame
+  reward : np.ndarray  (n_agents,)    ← shared team reward
   terminated/truncated: bool
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Dict, List, Optional, Tuple
 
-from isaac.scenes.slam_scene_cfg import ObstacleMap
+from ..utils.map_utils import ObstacleMap
 from ..utils.astar import astar
 from ..rewards.pursuit_reward import PursuitReward
 

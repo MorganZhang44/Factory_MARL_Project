@@ -29,7 +29,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from marl.envs.pursuit_env import PursuitEnv
-from isaac.scenes.slam_scene_cfg import (
+from marl.utils.map_utils import (
     ALL_RECTS, ALL_CIRCLES, PERIMETER_WALLS, INTERIOR_WALLS, BOXES, PILLARS
 )
 from marl.utils.astar import astar
