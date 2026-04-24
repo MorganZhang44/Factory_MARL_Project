@@ -1,0 +1,100 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    image: factory-marl/core:dev
+    container_name: factory-core
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - core_ros2_workspace:/docker-workspaces/core
+    environment:
+      CORE_CONDA_ENV: core
+      CORE_WORKSPACE: /docker-workspaces/core
+      CORE_CLEAN_WORKSPACE: "1"
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      PYTHONUNBUFFERED: "1"
+    command:
+      - bash
+      - -lc
+      - ./scripts/launch_core_dashboard.sh
+    depends_on:
+      - navdp
+      - locomotion
+    restart: unless-stopped
+
+  navdp:
+    build:
+      context: .
+      dockerfile: navdp/Dockerfile
+    image: factory-marl/navdp:dev
+    container_name: factory-navdp
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      NAVDP_CONDA_ENV: navdp
+      NAVDP_PLANNER: auto
+      NAVDP_DEVICE: cpu
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      PYTHONUNBUFFERED: "1"
+    command:
+      - bash
+      - -lc
+      - ./scripts/launch_navdp.sh
+    restart: unless-stopped
+
+  locomotion:
+    build:
+      context: .
+      dockerfile: locomotion/Dockerfile
+    image: factory-marl/locomotion:dev
+    container_name: factory-locomotion
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      LOCOMOTION_CONDA_ENV: locomotion
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      PYTHONUNBUFFERED: "1"
+    command:
+      - bash
+      - -lc
+      - ./scripts/launch_locomotion.sh
+    restart: unless-stopped
+
+  simulation:
+    profiles: ["simulation"]
+    build:
+      context: .
+      dockerfile: simulation/Dockerfile.headless
+    image: factory-marl/simulation-headless:dev
+    container_name: factory-simulation
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      ACCEPT_EULA: "Y"
+      OMNI_KIT_ACCEPT_EULA: "YES"
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      PYTHONUNBUFFERED: "1"
+    gpus: all
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command:
+      - /isaac-sim/python.sh simulation/standalone/validate_slam_scene.py --device cuda:0 --headless --keep-open
+        --no-export
+    restart: "no"
+
+volumes:
+  core_ros2_workspace:

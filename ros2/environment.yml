@@ -1,0 +1,14 @@
+name: ros2
+channels:
+  - conda-forge
+  - robostack-staging
+dependencies:
+  - python=3.10
+  - ros-humble-ros-base
+  - ros-humble-sensor-msgs
+  - ros-humble-geometry-msgs
+  - ros-humble-std-msgs
+  - ros-humble-launch
+  - ros-humble-launch-ros
+  - colcon-common-extensions
+  - setuptools

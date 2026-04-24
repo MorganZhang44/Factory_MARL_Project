@@ -1,6 +1,6 @@
 """
 map_utils.py
-Obstacle definitions extracted from isaac/scenes/warehouse_scene_cfg.py.
+Obstacle definitions extracted from simulation/scenes/warehouse_scene_cfg.py.
 Provides collision checking and occupancy grid for A* path planning.
 
 Coordinate frame: world origin at (0, 0), range [-10, +10] m (both axes).

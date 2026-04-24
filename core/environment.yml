@@ -1,0 +1,17 @@
+name: core
+channels:
+  - conda-forge
+  - robostack-staging
+dependencies:
+  - python=3.10
+  - numpy
+  - fastapi
+  - uvicorn
+  - pillow
+  - pyyaml
+  - ros-humble-ros-base
+  - ros-humble-sensor-msgs
+  - ros-humble-geometry-msgs
+  - ros-humble-std-msgs
+  - colcon-common-extensions
+  - setuptools

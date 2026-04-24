@@ -1,0 +1,17 @@
+ARG BASE_IMAGE=nvcr.io/nvidia/isaac-sim:5.1.0
+FROM ${BASE_IMAGE}
+
+SHELL ["/bin/bash", "-lc"]
+WORKDIR /workspace
+
+RUN /isaac-sim/python.sh -m pip install --no-cache-dir isaaclab==2.3.2.post1
+
+ENV ACCEPT_EULA=Y
+ENV OMNI_KIT_ACCEPT_EULA=YES
+ENV PYTHONUNBUFFERED=1
+ENV ISAACLAB_SOURCE=/isaac-sim/kit/python/lib/python3.11/site-packages/isaaclab/source
+ENV ISAAC_ROS2_BRIDGE=/isaac-sim/exts/isaacsim.ros2.bridge/humble
+ENV PYTHONPATH=${ISAAC_ROS2_BRIDGE}/rclpy:${ISAACLAB_SOURCE}/isaaclab:${ISAACLAB_SOURCE}/isaaclab_assets:${ISAACLAB_SOURCE}/isaaclab_tasks:${ISAACLAB_SOURCE}/isaaclab_rl:${ISAACLAB_SOURCE}/isaaclab_mimic:${PYTHONPATH}
+ENV LD_LIBRARY_PATH=${ISAAC_ROS2_BRIDGE}/lib:${LD_LIBRARY_PATH}
+
+CMD ["bash", "-lc", "python simulation/standalone/validate_slam_scene.py --device cuda:0 --headless --keep-open"]

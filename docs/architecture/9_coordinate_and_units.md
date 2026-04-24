@@ -16,7 +16,7 @@ This ensures:
 * Type: **2D Cartesian**
 * Frame: `world`
 * Origin: **center of the map (0, 0)**
-* Authority: matches Isaac Lab world frame in `isaac/scenes/warehouse_scene_cfg.py`
+* Authority: matches Isaac Lab world frame in `simulation/scenes/warehouse_scene_cfg.py`
 
 ---
 
