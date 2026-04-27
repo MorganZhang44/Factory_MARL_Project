@@ -43,6 +43,7 @@ CKPT_PATH = "results/checkpoints/final.pt"
 
 SCREEN_W, SCREEN_H = 820, 760
 MAP_PX     = 700          # map area in pixels (square)
+VIEW_HALF  = 7.0          # viewport bounds (zoomed into the inner room)
 MAP_OFFSET = (60, 30)     # top-left corner of the map on screen
 
 FPS = 20
@@ -71,20 +72,20 @@ GREEN_COL   = ( 80, 200, 120)
 # ── Coordinate helpers ────────────────────────────────────────────────
 
 class CoordMapper:
-    def __init__(self, map_half: float, px: int, offset: tuple):
-        self.map_half = map_half
+    def __init__(self, view_half: float, px: int, offset: tuple):
+        self.view_half = view_half
         self.px       = px
         self.offset   = offset
-        self.scale    = px / (2 * map_half)   # pixels per metre
+        self.scale    = px / (2 * view_half)   # pixels per metre
 
     def world_to_screen(self, x: float, y: float) -> tuple[int, int]:
-        sx = int((x + self.map_half) * self.scale) + self.offset[0]
-        sy = int((-y + self.map_half) * self.scale) + self.offset[1]
+        sx = int((x + self.view_half) * self.scale) + self.offset[0]
+        sy = int((-y + self.view_half) * self.scale) + self.offset[1]
         return sx, sy
 
     def screen_to_world(self, sx: int, sy: int) -> tuple[float, float]:
-        x = (sx - self.offset[0]) / self.scale - self.map_half
-        y = -((sy - self.offset[1]) / self.scale - self.map_half)
+        x = (sx - self.offset[0]) / self.scale - self.view_half
+        y = -((sy - self.offset[1]) / self.scale - self.view_half)
         return x, y
 
     def m_to_px(self, metres: float) -> int:
@@ -97,14 +98,15 @@ def build_map_surface(cm: CoordMapper) -> pygame.Surface:
     surf = pygame.Surface((MAP_PX, MAP_PX))
     surf.fill(MAP_BG)
 
-    # Grid lines
-    for i in range(0, 21, 2):
-        world_coord = -10 + i
-        sx, _  = cm.world_to_screen(world_coord, 0)
-        _, sy  = cm.world_to_screen(0, world_coord)
+    # Grid lines (draw them specifically across the VIEW bounds)
+    for i in range(-int(cm.view_half), int(cm.view_half) + 1):
+        sx, _  = cm.world_to_screen(i, 0)
+        _, sy  = cm.world_to_screen(0, i)
         ox, oy = cm.offset
-        pygame.draw.line(surf, GRID_COLOR, (sx - ox, 0), (sx - ox, MAP_PX), 1)
-        pygame.draw.line(surf, GRID_COLOR, (0, sy - oy), (MAP_PX, sy - oy), 1)
+        if 0 <= sx - ox <= MAP_PX:
+            pygame.draw.line(surf, GRID_COLOR, (sx - ox, 0), (sx - ox, MAP_PX), 1)
+        if 0 <= sy - oy <= MAP_PX:
+            pygame.draw.line(surf, GRID_COLOR, (0, sy - oy), (MAP_PX, sy - oy), 1)
 
     # Rectangular obstacles
     for obs in ALL_RECTS:
@@ -314,7 +316,7 @@ def main():
 
     # ── Env for A* map & agent movement ─────────────────────────────
     env = PursuitEnv(cfg, render_mode=None)
-    cm  = CoordMapper(MAP_HALF, MAP_PX, MAP_OFFSET)
+    cm  = CoordMapper(VIEW_HALF, MAP_PX, MAP_OFFSET)
 
     # Pre-render map
     map_surf = build_map_surface(cm)
@@ -327,7 +329,6 @@ def main():
             "start_time": time.time(),
             "caps":       0,
             "cap_flash":  0,
-            "prev_tpos":  env.agent_pos[0].copy(),  # will set to mouse on first frame
             "target_vel": np.zeros(2),
             "trail":      deque(maxlen=25),
             "dist_min":   99.9,
@@ -352,25 +353,44 @@ def main():
                 if event.key == pygame.K_r:
                     state = reset_episode()
 
-        # ── Mouse → world ────────────────────────────────────────────
+        # ── Mouse → world (capped velocity) ──────────────────────────
         mx, my = pygame.mouse.get_pos()
-        wx, wy = cm.screen_to_world(mx, my)
-        wx = float(np.clip(wx, -MAP_HALF + 0.5, MAP_HALF - 0.5))
-        wy = float(np.clip(wy, -MAP_HALF + 0.5, MAP_HALF - 0.5))
+        target_mouse_x, target_mouse_y = cm.screen_to_world(mx, my)
+        
+        # Clamp mouse to strictly the inner room's limits to avoid glitching outside walls
+        target_mouse_x = float(np.clip(target_mouse_x, -5.5, 6.4))
+        target_mouse_y = float(np.clip(target_mouse_y, -4.6, 3.4))
 
-        # Clamp into free space (don't teleport into obstacle)
-        if env.obs_map.is_collision(wx, wy):
-            wx, wy = float(env.target_pos[0]), float(env.target_pos[1])
+        # Calculate exact vector towards the mouse from CURRENT intruder position
+        desired_pos = np.array([target_mouse_x, target_mouse_y])
+        current_pos = env.target_pos.copy()
+        
+        raw_diff = desired_pos - current_pos
+        dist_to_mouse = float(np.linalg.norm(raw_diff))
+        
+        # Max speed limit for human intruder: increased to 4.0 m/s for nimbleness
+        INTRUDER_MAX_SPD = 4.0  
+        
+        if dist_to_mouse > 1e-4:
+            # How far *could* they move this frame?
+            max_step = INTRUDER_MAX_SPD * dt_real
+            actual_step = min(dist_to_mouse, max_step)
+            
+            # Apply movement
+            new_pos = current_pos + (raw_diff / dist_to_mouse) * actual_step
+            tvel = (new_pos - current_pos) / max(dt_real, 1e-4)
+        else:
+            tvel = np.zeros(2)
+            new_pos = current_pos
 
-        # Velocity from mouse movement
-        tvel = (np.array([wx, wy]) - state["prev_tpos"]) / max(dt_real, 1e-4)
-        tvel_spd = np.linalg.norm(tvel)
-        if tvel_spd > 5.0:
-            tvel = tvel / tvel_spd * 5.0
-        env.target_pos = np.array([wx, wy])
+        # Clamp into free space (don't walk into obstacle)
+        if env.obs_map.is_collision(new_pos[0], new_pos[1]):
+            new_pos = current_pos
+            tvel = np.zeros(2)
+
+        env.target_pos = new_pos
         env.target_vel = tvel
-        state["prev_tpos"] = np.array([wx, wy])
-        state["trail"].append((wx, wy))
+        state["trail"].append((new_pos[0], new_pos[1]))
 
         # ── MARL policy ──────────────────────────────────────────────
         obs = env._get_obs()   # uses updated target_pos/vel
@@ -456,11 +476,11 @@ def main():
         pygame.draw.circle(screen, SUSPECT_COL, (mx, my), 5, 2)
 
         # Axis labels
-        for i, label in enumerate(["-10", "-5", "0", "+5", "+10"]):
-            lx = int(ox + i * MAP_PX / 4)
-            ly = oy + MAP_PX + 6
-            surf = font.render(label, True, DIM_COL)
-            screen.blit(surf, (lx - surf.get_width() // 2, ly))
+        for label in [-6, -3, 0, 3, 6]:
+            lx, ly = cm.world_to_screen(label, -cm.view_half)
+            surf = font.render(str(label), True, DIM_COL)
+            if 0 <= lx - ox <= MAP_PX:
+                screen.blit(surf, (lx - surf.get_width() // 2, ly + 6))
 
         pygame.display.flip()
 

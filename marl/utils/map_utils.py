@@ -1,9 +1,6 @@
 """
 map_utils.py
-Obstacle definitions extracted from isaac/scenes/warehouse_scene_cfg.py.
-Provides collision checking and occupancy grid for A* path planning.
-
-Coordinate frame: world origin at (0, 0), range [-10, +10] m (both axes).
+Utilities for 2D map representation and obstacle handling.
 """
 from __future__ import annotations
 
@@ -13,12 +10,23 @@ from typing import List, Tuple
 
 
 # ---------------------------------------------------------------------------
-# Obstacle primitives
+# Map Bounds & Parameters
 # ---------------------------------------------------------------------------
+MAP_HALF = 10.0         # m (map bounds: x & y in [-10.0, 10.0])
+WALL_THICKNESS = 0.3    # m (default thickness)
 
+# Initial 2D Starting Positions (extracted from new_scene.py)
+AGENT_1_POS_2D = (-4.0, -3.0)
+AGENT_2_POS_2D = (-4.0, 2.2)
+INTRUDER_POS_2D = (4.8, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Obstacle Primitive Data Classes
+# ---------------------------------------------------------------------------
 @dataclass
 class RectObstacle:
-    """Axis-aligned rectangle. cx, cy = centre; w, h = full width/height."""
+    """Axis-aligned rectangular obstacle. cx, cy = center; w, h = total width/height."""
     cx: float
     cy: float
     w: float
@@ -28,10 +36,9 @@ class RectObstacle:
         return (abs(x - self.cx) <= self.w / 2 + margin and
                 abs(y - self.cy) <= self.h / 2 + margin)
 
-
 @dataclass
 class CircleObstacle:
-    """Circular obstacle (pillars). cx, cy = centre; r = radius."""
+    """Circular obstacle. cx, cy = center; r = radius."""
     cx: float
     cy: float
     r: float
@@ -41,74 +48,66 @@ class CircleObstacle:
 
 
 # ---------------------------------------------------------------------------
-# Scene obstacles (from warehouse_scene_cfg.py)
-# WALL_THICKNESS=0.3, SCENE_SIZE=20, PILLAR_RADIUS=0.25
+# Obstacles Definitions (From new_scene.py)
 # ---------------------------------------------------------------------------
 
+# Extracted from new_scene.py WALLS + Solid padding for outside space
 PERIMETER_WALLS: List[RectObstacle] = [
-    RectObstacle(cx=0.0,   cy=10.0,  w=20.3, h=0.3),   # North
-    RectObstacle(cx=0.0,   cy=-10.0, w=20.3, h=0.3),   # South
-    RectObstacle(cx=10.0,  cy=0.0,   w=0.3,  h=20.0),  # East
-    RectObstacle(cx=-10.0, cy=0.0,   w=0.3,  h=20.0),  # West
+    # Actual walls of the room
+    RectObstacle(cx=-0.85, cy=3.45,  w=9.52, h=0.16),  # Wall_0000_Back
+    RectObstacle(cx=-5.50, cy=-0.65, w=0.16, h=8.16),  # Wall_0001_Left
+    RectObstacle(cx=-0.95, cy=-4.65, w=9.18, h=0.16),  # Wall_0002_Front
+    RectObstacle(cx=3.75,  cy=-2.85, w=0.16, h=4.08),  # Wall_0003_RightLower
+    RectObstacle(cx=5.00,  cy=-0.95, w=3.06, h=0.16),  # Wall_0004_StepMiddle
+    RectObstacle(cx=6.25,  cy=1.35,  w=0.16, h=4.93),  # Wall_0005_RightUpper
+    RectObstacle(cx=5.15,  cy=3.45,  w=2.89, h=0.16),  # Wall_0006_TopRight
+    RectObstacle(cx=3.75,  cy=2.65,  w=0.16, h=2.125), # Wall_0007_StepJoin
+    
+    # 🚨 SOLID OUTER PADDING: prevents clipping or walking outside the room bounds
+    RectObstacle(cx=0.0,  cy=7.0,   w=22.0, h=7.0),    # Top Solid Bound
+    RectObstacle(cx=0.0,  cy=-7.5,  w=22.0, h=5.5),    # Bottom Solid Bound
+    RectObstacle(cx=-8.0, cy=0.0,   w=5.0,  h=22.0),   # Left Solid Bound
+    RectObstacle(cx=8.5,  cy=0.0,   w=4.0,  h=22.0),   # Right Solid Bound
+    
+    # Bottom-right 'cutout' area filling
+    RectObstacle(cx=6.0,  cy=-3.0,  w=4.5,  h=4.5),    # Bottom-Right corner padding
 ]
 
+# Extracted from new_scene.py OBSTACLES
 INTERIOR_WALLS: List[RectObstacle] = [
-    RectObstacle(cx=-3.0, cy=3.0,  w=6.0, h=0.3),  # InteriorWall1 (horizontal)
-    RectObstacle(cx=4.0,  cy=-2.5, w=0.3, h=5.0),  # InteriorWall2 (vertical)
-    RectObstacle(cx=2.0,  cy=-5.0, w=4.0, h=0.3),  # InteriorWall3 (horizontal)
+    RectObstacle(cx=-2.30, cy=-0.85, w=0.425, h=1.275), # LeftIsland
+    RectObstacle(cx=0.40,  cy=-0.95, w=0.425, h=1.375), # CenterIsland
+    RectObstacle(cx=2.95,  cy=-0.65, w=0.45,  h=1.40),  # RightIsland
 ]
 
-PILLARS: List[CircleObstacle] = [
-    CircleObstacle(cx=-5.0, cy=-5.0, r=0.25),  # Pillar1
-    CircleObstacle(cx=5.0,  cy=5.0,  r=0.25),  # Pillar2
-    CircleObstacle(cx=-2.0, cy=7.0,  r=0.25),  # Pillar3
-    CircleObstacle(cx=7.0,  cy=-7.0, r=0.25),  # Pillar4
-]
+BOXES: List[RectObstacle] = []
+PILLARS: List[CircleObstacle] = []
 
-BOXES: List[RectObstacle] = [
-    RectObstacle(cx=2.0,  cy=6.0,  w=1.0, h=1.0),  # Box1 + BoxStack1 (same footprint)
-    RectObstacle(cx=-6.0, cy=-2.0, w=1.5, h=1.0),  # Box2
-    RectObstacle(cx=-3.0, cy=-7.0, w=2.0, h=1.5),  # Box3
-    RectObstacle(cx=6.5,  cy=2.0,  w=1.0, h=1.0),  # Box4
-]
-
-ALL_RECTS:   List[RectObstacle]   = PERIMETER_WALLS + INTERIOR_WALLS + BOXES
+ALL_RECTS: List[RectObstacle] = PERIMETER_WALLS + INTERIOR_WALLS + BOXES
 ALL_CIRCLES: List[CircleObstacle] = PILLARS
 
 
 # ---------------------------------------------------------------------------
-# ObstacleMap
+# Occupancy Grid / Collision Map
 # ---------------------------------------------------------------------------
-
 class ObstacleMap:
-    """
-    Provides:
-      - Continuous collision checking (with agent-radius inflation)
-      - Pre-built binary occupancy grid for A* planning
-    """
-
     def __init__(
         self,
-        map_half: float = 10.0,
+        map_half: float = MAP_HALF,
         resolution: float = 0.5,
         agent_radius: float = 0.3,
     ):
-        self.map_half     = map_half
-        self.resolution   = resolution
+        self.map_half = map_half
+        self.resolution = resolution
         self.agent_radius = agent_radius
-        self.grid_size    = int(round(2 * map_half / resolution))  # 40 cells @ 0.5 m
+        self.grid_size = int(round(2 * map_half / resolution))
 
-        self._rects   = ALL_RECTS
+        self._rects = ALL_RECTS
         self._circles = ALL_CIRCLES
-
-        self.grid = self._build_grid()  # (grid_size, grid_size) uint8
-
-    # ------------------------------------------------------------------
-    # Coordinate conversion
-    # ------------------------------------------------------------------
+        
+        self.grid = self._build_grid()
 
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
-        """World (m) → (row, col). Row increases with y."""
         col = int((x + self.map_half) / self.resolution)
         row = int((y + self.map_half) / self.resolution)
         col = int(np.clip(col, 0, self.grid_size - 1))
@@ -116,17 +115,11 @@ class ObstacleMap:
         return row, col
 
     def grid_to_world(self, row: int, col: int) -> Tuple[float, float]:
-        """Grid cell centre → world (m)."""
         x = (col + 0.5) * self.resolution - self.map_half
         y = (row + 0.5) * self.resolution - self.map_half
         return x, y
 
-    # ------------------------------------------------------------------
-    # Grid construction
-    # ------------------------------------------------------------------
-
     def _build_grid(self) -> np.ndarray:
-        """Binary grid: 1 = obstacle (inflated by agent_radius)."""
         grid = np.zeros((self.grid_size, self.grid_size), dtype=np.uint8)
         m = self.agent_radius
         for row in range(self.grid_size):
@@ -143,13 +136,10 @@ class ObstacleMap:
                             break
         return grid
 
-    # ------------------------------------------------------------------
-    # Collision checking (continuous, used at every env step)
-    # ------------------------------------------------------------------
-
     def is_collision(self, x: float, y: float) -> bool:
         if abs(x) >= self.map_half or abs(y) >= self.map_half:
             return True
+            
         m = self.agent_radius
         for obs in self._rects:
             if obs.contains_point(x, y, m):
