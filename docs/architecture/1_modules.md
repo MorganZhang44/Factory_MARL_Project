@@ -8,6 +8,7 @@ All modules:
 
 * communicate **only through the Core Communication Layer**
 * do NOT directly call each other
+* run only in their owned runtime environment
 * operate within a **synchronous execution loop (Version 1)**
 
 ---
@@ -28,7 +29,7 @@ All modules:
 
 ### Role
 
-* Provide the 2D environment
+* Provide the Isaac Sim / Isaac Lab simulation environment
 * Maintain ground-truth state of:
 
   * agents
@@ -48,6 +49,8 @@ All modules:
 ### Notes
 
 * Acts as **single source of truth**
+* Runs only in the `isaaclab51` environment
+* Uses USD scenes and Isaac Sim / Isaac Lab APIs directly
 * In Version 1, may expose intruder ground truth for development convenience
 * Responsible for applying actions at each timestep
 
@@ -187,9 +190,10 @@ All modules:
 
 ### Execution Model
 
-* Runs **in-process (single machine)**
-* Acts as a **message dispatcher**
-* Messages are delivered within the same timestep
+* Runs in the `core` environment
+* Acts as the central message dispatcher and runtime coordinator
+* Receives Simulation data through ROS2
+* Exposes Core-owned state to Visualization through REST / WebSocket
 
 ---
 
@@ -236,6 +240,7 @@ Each module:
 
 * consumes well-defined topics
 * produces structured messages
+* runs in its own runtime environment
 * operates independently
 
 This design ensures:

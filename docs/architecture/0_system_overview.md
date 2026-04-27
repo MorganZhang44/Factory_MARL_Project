@@ -2,7 +2,8 @@
 
 ## Goal
 
-Build a modular multi-agent system (2 agents) that can detect, track, and intercept an intruder in a 2D environment.
+Build a modular multi-agent system (2 agents) that can detect, track, and
+intercept an intruder in an Isaac Sim environment.
 
 The system integrates:
 
@@ -22,6 +23,7 @@ The system is designed not only for academic prototyping, but also with **future
 Key priorities:
 
 * clear module separation
+* strict runtime environment ownership
 * standardized interfaces
 * replaceable components
 * scalable communication structure
@@ -139,6 +141,13 @@ The system is built in stages:
 
 * All modules run locally
 * Communication is abstracted (not physically distributed yet)
+* Each module still runs only in its own environment
+
+Current local environment ownership:
+
+* Simulation runs in `isaaclab51`
+* Core Communication Layer and Visualization run in `core`
+* ROS2 tooling / bringup runs in `ros2`
 
 ---
 
@@ -146,7 +155,7 @@ The system is built in stages:
 
 ### Included
 
-* 2D environment
+* Isaac Sim / Isaac Lab simulation scene
 * 2 agents + 1 intruder
 * simplified perception (can use ground truth)
 * MARL decision module

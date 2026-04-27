@@ -35,7 +35,17 @@ The strategy:
 
 ---
 
-## 4. Always Runnable
+## 4. Runtime Environment Ownership
+
+* each module must run only in its own environment
+* Simulation runs in `isaaclab51`
+* Core and Visualization run in `core`
+* ROS2 tooling / bringup runs in `ros2`
+* integration must not be achieved by importing another module's runtime code
+
+---
+
+## 5. Always Runnable
 
 * system must run at every stage
 * no broken intermediate states
@@ -69,6 +79,10 @@ The strategy:
 
 ### Tasks
 
+* run Isaac Sim / Isaac Lab from the `simulation/` module
+* load the SLAM USD scene
+* spawn two Go2 robot dogs and one intruder
+* attach camera and LiDAR sensors to each dog
 * publish `simulation/state`
 * subscribe to `locomotion/motion_command`
 

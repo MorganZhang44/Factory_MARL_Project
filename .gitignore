@@ -146,3 +146,12 @@ results/
 tmp/
 .DS_Store
 *.gif
+core/workspace/build/
+core/workspace/install/
+core/workspace/log/
+ros2/workspace/build/
+ros2/workspace/install/
+ros2/workspace/log/
+ros2_ws/
+checkpoints/
+*.npz

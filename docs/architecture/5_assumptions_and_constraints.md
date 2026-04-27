@@ -18,7 +18,8 @@ The goal is to:
 
 ## 1. Environment
 
-* The system operates in a **2D Cartesian map**
+* The system operates in an Isaac Sim / Isaac Lab scene
+* Planning and high-level reasoning may use a projected **2D Cartesian map**
 * Coordinate system:
 
   * origin at **center (0, 0)**
@@ -92,6 +93,7 @@ The goal is to:
 ## 6. Communication
 
 * All modules run on a **single machine**
+* Each module runs only in its own runtime environment
 * Communication is:
 
   * synchronous
@@ -158,12 +160,12 @@ Not included:
 
 * Communication layer is:
 
-  * in-process
   * lightweight
+  * the only routing hub between modules
 * No:
 
-  * distributed scheduling
-  * network latency
+  * hidden direct module calls
+  * shared Python runtime across modules
   * fault tolerance
 
 ---
@@ -173,6 +175,7 @@ Not included:
 * System must support **parallel development**
 * Interfaces must remain stable
 * Modules must be independently testable
+* A module must not be launched from another module's environment
 
 ---
 

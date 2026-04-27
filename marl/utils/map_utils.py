@@ -1,6 +1,10 @@
 """
 map_utils.py
 Utilities for 2D map representation and obstacle handling.
+Obstacle definitions extracted from simulation/scenes/slam_scene_cfg.py.
+Provides collision checking and occupancy grid for A* path planning.
+
+Coordinate frame: world origin at (0, 0), range [-10, +10] m (both axes).
 """
 from __future__ import annotations
 

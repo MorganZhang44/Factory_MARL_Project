@@ -2,11 +2,14 @@
 
 ## Overview
 
-Defines the exact execution behavior of the system.
+Defines the logical execution behavior of the system.
 
 The system is:
 
-> **synchronous, timestep-based, message-driven**
+> **message-driven with a deterministic logical control order**
+
+Physical processes may run in separate module environments. The sequence below
+defines control ownership and data dependencies, not Python call order.
 
 ---
 
@@ -28,23 +31,23 @@ while not done:
     # 1. Simulation publishes current state
     simulation.publish_state()
 
-    comm.dispatch()
+    core.dispatch()
 
     # 2. Perception
     perception.update()
-    comm.dispatch()
+    core.dispatch()
 
     # 3. Decision
     decision.update()
-    comm.dispatch()
+    core.dispatch()
 
     # 4. Planning
     planning.update()
-    comm.dispatch()
+    core.dispatch()
 
     # 5. Locomotion
     locomotion.update()
-    comm.dispatch()
+    core.dispatch()
 
     # 6. Simulation applies commands
     simulation.apply_motion_commands()
@@ -73,8 +76,8 @@ Order MUST NOT change.
 
 ## 1. Immediate Delivery
 
-* after each publish, `dispatch()` is called
-* messages are delivered within same timestep
+* after each publish, Core routes the newest available state
+* Version 1 tries to keep a deterministic frame order
 
 ---
 
@@ -147,8 +150,8 @@ t+1:
 System MUST ensure:
 
 * same input → same output
-* no race conditions
-* no async execution
+* no hidden direct calls between modules
+* no module running inside another module's environment
 
 ---
 

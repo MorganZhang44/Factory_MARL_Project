@@ -1,0 +1,14 @@
+name: navdp
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - pillow
+  - matplotlib
+  - opencv
+  - pytorch
+  - torchvision
+  - diffusers
+  - pyyaml

@@ -1,0 +1,229 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def PhysicsScene "PhysicsScene"
+    {
+    }
+
+    def "Materials"
+    {
+        def Material "Wall"
+        {
+            token outputs:surface.connect = </World/Materials/Wall/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.08, 0.08, 0.08)
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "Obstacle"
+        {
+            token outputs:surface.connect = </World/Materials/Obstacle/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.36, 0.14, 0.1)
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "Floor"
+        {
+            token outputs:surface.connect = </World/Materials/Floor/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.72, 0.72, 0.68)
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "Lights"
+    {
+        def DomeLight "Dome"
+        {
+            color3f inputs:color = (0.78, 0.84, 1)
+            float inputs:exposure = 0
+            float inputs:intensity = 450
+        }
+
+        def DistantLight "Sun"
+        {
+            float inputs:angle = 0.45
+            color3f inputs:color = (1, 0.96, 0.9)
+            float inputs:intensity = 2600
+            float3 xformOp:rotateXYZ = (55, 0, -35)
+            uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        }
+
+        def RectLight "OverheadPanel"
+        {
+            color3f inputs:color = (1, 0.98, 0.92)
+            float inputs:height = 9
+            float inputs:intensity = 420
+            float inputs:width = 14
+            double3 xformOp:translate = (2.4, -0.5, 6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
+    def "Map"
+    {
+        def Cube "Floor" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            rel material:binding = </World/Materials/Floor>
+            double size = 1
+            float3 xformOp:scale = (16, 9.5, 0.02)
+            double3 xformOp:translate = (-0.85, -0.65, -0.02)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def "Walls"
+        {
+            def Cube "Wall_0000_Back" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (9.52, 0.16, 1.8)
+                double3 xformOp:translate = (-0.85, 3.45, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0001_Left" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (0.16, 8.16, 1.8)
+                double3 xformOp:translate = (-5.5, -0.65, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0002_Front" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (9.18, 0.16, 1.8)
+                double3 xformOp:translate = (-0.95, -4.65, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0003_RightLower" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (0.16, 4.08, 1.8)
+                double3 xformOp:translate = (3.75, -2.85, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0004_StepMiddle" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (3.06, 0.16, 1.8)
+                double3 xformOp:translate = (5, -0.95, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0005_RightUpper" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (0.16, 4.93, 1.8)
+                double3 xformOp:translate = (6.25, 1.35, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0006_TopRight" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (2.89, 0.16, 1.8)
+                double3 xformOp:translate = (5.15, 3.45, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Wall_0007_StepJoin" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Wall>
+                double size = 1
+                float3 xformOp:scale = (0.16, 2.125, 1.8)
+                double3 xformOp:translate = (3.75, 2.65, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def "Obstacles"
+        {
+            def Cube "Obstacle_0000_LeftIsland" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Obstacle>
+                double size = 1
+                float3 xformOp:scale = (0.425, 1.275, 1.8)
+                double3 xformOp:translate = (-2.3, -0.85, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Obstacle_0001_CenterIsland" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Obstacle>
+                double size = 1
+                float3 xformOp:scale = (0.425, 1.375, 1.8)
+                double3 xformOp:translate = (0.4, -0.95, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Obstacle_0002_RightIsland" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                rel material:binding = </World/Materials/Obstacle>
+                double size = 1
+                float3 xformOp:scale = (0.45, 1.4, 1.8)
+                double3 xformOp:translate = (2.95, -0.65, 0.9)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "Robots"
+    {
+    }
+}
