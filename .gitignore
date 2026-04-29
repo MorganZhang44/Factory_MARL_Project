@@ -142,7 +142,6 @@ dmypy.json
 cython_debug/
 
 # Project specific
-results/
 tmp/
 .DS_Store
 *.gif
@@ -153,5 +152,4 @@ ros2/workspace/build/
 ros2/workspace/install/
 ros2/workspace/log/
 ros2_ws/
-checkpoints/
 *.npz
