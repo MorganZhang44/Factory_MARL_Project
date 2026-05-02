@@ -49,6 +49,7 @@ This baseline still follows the per-module environment rule.
 
 * `simulation` runs in `isaaclab51`
 * `core` and visualization run in `core`
+* `perception` runs in `perception`
 * ROS2 bringup runs from the ROS2 workspace launched by the core side
 * `navdp` runs in its own module environment
 * `locomotion` runs in its own module environment
@@ -56,6 +57,7 @@ This baseline still follows the per-module environment rule.
 Cross-module communication in this baseline is explicit:
 
 * `simulation <-> core`: ROS2 topics
+* `core <-> perception`: HTTP
 * `core <-> navdp`: HTTP
 * `core <-> locomotion`: HTTP
 * `visualization <- core`: WebSocket / state API
@@ -107,7 +109,7 @@ From `control_node.py`:
 This means:
 
 * Core control loop runs at `50 Hz`
-* NavDP replans at most at `2 Hz`
+* NavDP replans at most at `10 Hz`
 * Core reuses a cached path between planning calls
 
 ### Locomotion

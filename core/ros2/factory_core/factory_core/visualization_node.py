@@ -88,6 +88,7 @@ HTML_PAGE = """<!doctype html>
     .page { display: none !important; gap: 14px; }
     .page.active { display: grid !important; }
     .two-col { grid-template-columns: minmax(420px, 1.35fr) minmax(320px, 1fr); }
+    .worldstate-layout { grid-template-columns: minmax(420px, 1.35fr) minmax(320px, 1fr); }
     .full-grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
     .section {
       background: #ffffff;
@@ -109,6 +110,7 @@ HTML_PAGE = """<!doctype html>
     .stack { display: grid; gap: 10px; }
     .grid { display: grid; gap: 12px; }
     .summary-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .camera-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .summary-card, .robot-card, .module-card {
       border: 1px solid #e2e8f1;
       border-radius: 8px;
@@ -210,6 +212,9 @@ HTML_PAGE = """<!doctype html>
       max-height: 420px;
       overflow: auto;
     }
+    @media (max-width: 1480px) {
+      .worldstate-layout { grid-template-columns: 1fr; }
+    }
     @media (max-width: 1120px) {
       .app { grid-template-columns: 1fr; }
       aside { border-right: none; border-bottom: 1px solid #d8e0ec; }
@@ -227,6 +232,8 @@ HTML_PAGE = """<!doctype html>
       <div class="nav-group">
         <button class="nav-button active" data-page="worldstate">WorldState</button>
         <button class="nav-button" data-page="robot">Robot</button>
+        <button class="nav-button" data-page="perception">Perception</button>
+        <button class="nav-button" data-page="marl">MARL</button>
         <button class="nav-button" data-page="navdp">NavDP</button>
         <button class="nav-button" data-page="locomotion">Locomotion</button>
       </div>
@@ -239,7 +246,7 @@ HTML_PAGE = """<!doctype html>
       </div>
     </aside>
     <main>
-      <section class="page two-col active" id="page-worldstate">
+      <section class="page two-col worldstate-layout active" id="page-worldstate">
         <div class="section stack">
           <h2>WorldState</h2>
           <canvas id="world-map" width="1024" height="700"></canvas>
@@ -252,6 +259,10 @@ HTML_PAGE = """<!doctype html>
           <div class="section">
             <h2>Active Entities</h2>
             <div class="stack" id="world-entity-list"></div>
+          </div>
+          <div class="section">
+            <h2>CCTV</h2>
+            <div class="grid camera-grid" id="world-cctv-grid"></div>
           </div>
           <div class="section">
             <h2>Flow Summary</h2>
@@ -276,6 +287,22 @@ HTML_PAGE = """<!doctype html>
         <div class="grid full-grid" id="navdp-grid"></div>
       </section>
 
+      <section class="page stack" id="page-perception">
+        <div class="section">
+          <h2>Perception</h2>
+          <div class="small-note">Core-to-perception connection state, localization output, intruder estimate, and sensor coverage summary.</div>
+        </div>
+        <div class="grid full-grid" id="perception-grid"></div>
+      </section>
+
+      <section class="page stack" id="page-marl">
+        <div class="section">
+          <h2>MARL</h2>
+          <div class="small-note">Core-mirrored MARL runtime state, current observation summary, action semantics, and per-robot decision subgoals. Distinct symbols make robot pose, intruder pose, and MARL target easier to read at a glance.</div>
+        </div>
+        <div class="grid full-grid" id="marl-grid"></div>
+      </section>
+
       <section class="page stack" id="page-locomotion">
         <div class="section">
           <h2>Locomotion</h2>
@@ -298,9 +325,12 @@ const connection = document.getElementById("connection");
 const moduleSummary = document.getElementById("module-summary");
 const worldModuleGrid = document.getElementById("world-module-grid");
 const worldEntityList = document.getElementById("world-entity-list");
+const worldCctvGrid = document.getElementById("world-cctv-grid");
 const worldSummary = document.getElementById("world-summary");
 const worldCanvas = document.getElementById("world-map");
 const robotGrid = document.getElementById("robot-grid");
+const perceptionGrid = document.getElementById("perception-grid");
+const marlGrid = document.getElementById("marl-grid");
 const navdpGrid = document.getElementById("navdp-grid");
 const locomotionGrid = document.getElementById("locomotion-grid");
 
@@ -400,6 +430,68 @@ function drawArrow(ctx, x, y, yaw, size, color) {
   ctx.restore();
 }
 
+function drawDiamondMarker(ctx, x, y, size, color, fill = true) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x, y - size);
+  ctx.lineTo(x + size, y);
+  ctx.lineTo(x, y + size);
+  ctx.lineTo(x - size, y);
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTargetMarker(ctx, x, y, size, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(x, y, size * 0.75, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - size, y);
+  ctx.lineTo(x + size, y);
+  ctx.moveTo(x, y - size);
+  ctx.lineTo(x, y + size);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArrowLine(ctx, x1, y1, x2, y2, color, dashed = false) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1.0e-6) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  if (dashed) ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const ux = dx / len;
+  const uy = dy / len;
+  const head = 10;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - ux * head - uy * head * 0.55, y2 - uy * head + ux * head * 0.55);
+  ctx.lineTo(x2 - ux * head + uy * head * 0.55, y2 - uy * head - ux * head * 0.55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawSceneMap(canvas, data, focusRobotId = null) {
   const ctx = canvas.getContext("2d");
   const bounds = buildWorldBounds(data);
@@ -437,15 +529,19 @@ function drawSceneMap(canvas, data, focusRobotId = null) {
 
   for (const [robotId, robot] of Object.entries(data.robots || {})) {
     const lidar = robot.lidar || {};
+    const lidarPoints = robot.lidar_points || {};
     const pose = robot.pose || {};
-    if (Array.isArray(pose.position) && Array.isArray(lidar.points)) {
+    const points = Array.isArray(lidar.points) ? lidar.points : (
+      Array.isArray(lidarPoints.points_xyz) ? lidarPoints.points_xyz : []
+    );
+    if (Array.isArray(pose.position) && points.length > 0) {
       ctx.fillStyle = robotId === focusRobotId ? "rgba(48, 126, 235, 0.18)" : "rgba(36, 163, 95, 0.14)";
       const rx = pose.position[0];
       const ry = pose.position[1];
       const yaw = yawFromPose(pose);
       const cosYaw = Math.cos(yaw);
       const sinYaw = Math.sin(yaw);
-      for (const point of lidar.points) {
+      for (const point of points) {
         const px = rx + point[0] * cosYaw - point[1] * sinYaw;
         const py = ry + point[0] * sinYaw + point[1] * cosYaw;
         ctx.beginPath();
@@ -528,7 +624,73 @@ function drawSceneMap(canvas, data, focusRobotId = null) {
   ctx.restore();
 }
 
-function drawLidar(canvas, lidar) {
+function drawMarlMap(canvas, data, focusRobotId = null) {
+  drawSceneMap(canvas, data, focusRobotId);
+  const ctx = canvas.getContext("2d");
+  const bounds = buildWorldBounds(data);
+  const proj = makeProjector(canvas, bounds);
+  const marl = data.marl || {};
+  const subgoals = marl.subgoals || {};
+  const intruderEntry = Object.entries(data.intruders || {})[0];
+  const intruderId = intruderEntry ? intruderEntry[0] : "intruder";
+  const intruderPose = intruderEntry && intruderEntry[1] ? intruderEntry[1].pose : null;
+  const intruderPos = intruderPose && Array.isArray(intruderPose.position) ? intruderPose.position : null;
+
+  if (intruderPos) {
+    const ix = proj.x(intruderPos[0]);
+    const iy = proj.y(intruderPos[1]);
+    drawDiamondMarker(ctx, ix, iy, 10, "#cb4a3f", true);
+    ctx.fillStyle = "#1b2430";
+    ctx.font = "13px ui-monospace, monospace";
+    ctx.fillText(intruderId, ix + 12, iy - 10);
+  }
+
+  for (const [robotId, robot] of Object.entries(data.robots || {})) {
+    const pose = robot.pose || {};
+    const robotPos = Array.isArray(pose.position) ? pose.position : null;
+    const subgoal = subgoals[robotId];
+    const subgoalPos = subgoal && Array.isArray(subgoal.subgoal) ? subgoal.subgoal : null;
+    if (!robotPos || !subgoalPos) continue;
+    const rx = proj.x(robotPos[0]);
+    const ry = proj.y(robotPos[1]);
+    const gx = proj.x(subgoalPos[0]);
+    const gy = proj.y(subgoalPos[1]);
+    const accent = robotId === focusRobotId ? "#7a42d1" : "#d39a1a";
+    drawArrowLine(ctx, rx, ry, gx, gy, accent, true);
+    drawTargetMarker(ctx, gx, gy, robotId === focusRobotId ? 13 : 11, accent);
+    if (intruderPos) {
+      drawArrowLine(ctx, gx, gy, proj.x(intruderPos[0]), proj.y(intruderPos[1]), "#cb4a3f", false);
+    }
+  }
+
+  const legendX = 16;
+  const legendY = 16;
+  ctx.fillStyle = "rgba(255,255,255,0.94)";
+  ctx.fillRect(legendX, legendY, 230, 92);
+  ctx.strokeStyle = "#d8e0ec";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(legendX, legendY, 230, 92);
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.fillStyle = "#233044";
+  ctx.fillText("MARL legend", legendX + 10, legendY + 16);
+  ctx.fillStyle = "#2a8d62";
+  ctx.beginPath();
+  ctx.arc(legendX + 18, legendY + 34, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#233044";
+  ctx.fillText("robot pose", legendX + 34, legendY + 38);
+  drawDiamondMarker(ctx, legendX + 18, legendY + 54, 6, "#cb4a3f", true);
+  ctx.fillStyle = "#233044";
+  ctx.fillText("intruder pose", legendX + 34, legendY + 58);
+  drawTargetMarker(ctx, legendX + 18, legendY + 74, 7, "#d39a1a");
+  ctx.fillStyle = "#233044";
+  ctx.fillText("MARL subgoal", legendX + 34, legendY + 78);
+  drawArrowLine(ctx, legendX + 138, legendY + 34, legendX + 168, legendY + 34, "#7a42d1", true);
+  ctx.fillStyle = "#233044";
+  ctx.fillText("robot -> subgoal", legendX + 174, legendY + 38);
+}
+
+function drawLidar(canvas, lidar, lidarPoints = {}) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
@@ -547,7 +709,9 @@ function drawLidar(canvas, lidar) {
   }
   ctx.beginPath(); ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius); ctx.stroke();
-  const points = Array.isArray(lidar.points) ? lidar.points : [];
+  const points = Array.isArray(lidar.points) ? lidar.points : (
+    Array.isArray(lidarPoints.points_xyz) ? lidarPoints.points_xyz : []
+  );
   const maxPointRange = points.reduce((acc, point) => Math.max(acc, Math.hypot(point[0] || 0, point[1] || 0)), 0);
   const range = Math.max(1, Math.min(Number(lidar.range_max) || 12, maxPointRange * 1.2 || 8));
   ctx.fillStyle = lidar.fresh ? "rgba(36, 163, 95, 0.75)" : "rgba(153, 165, 186, 0.6)";
@@ -671,16 +835,25 @@ function drawDogPose(canvas, jointRel, accent, actionScale = 1.0) {
 
 function renderModuleSummary(data) {
   const robots = Object.values(data.robots || {});
+  const cctv = Object.values(data.cctv_cameras || {});
+  const perception = data.perception || {};
+  const marl = data.marl || {};
   const simulationOk = robots.some(robot => robot.pose && robot.pose.fresh) || Object.values(data.intruders || {}).some(entry => entry.pose && entry.pose.fresh);
+  const perceptionOk = perception && perception.seen;
+  const marlOk = marl && marl.seen;
   const navdpOk = robots.some(robot => robot.planning && robot.planning.seen);
   const locomotionOk = robots.some(robot => robot.locomotion && robot.locomotion.seen);
   const robotObsOk = robots.some(robot => robot.observation && robot.observation.seen);
+  const cctvOk = cctv.some(camera => camera && camera.seen);
   const items = [
     ["core", "ok", "state mirror serving dashboard"],
     ["simulation", simulationOk ? "ok" : "waiting", `aggregate ${data.aggregate_state_seen ? "seen" : "missing"}`],
+    ["perception", perceptionOk ? normStatus(perception) : "waiting", perceptionOk ? `actual ${fmtHz(perception.hz)}` : "awaiting perception results"],
+    ["marl", marlOk ? normStatus(marl) : "waiting", marlOk ? `${marl.policy_mode || "-"} / ${marl.action_semantics || "-"}` : "awaiting mirrored marl output"],
+    ["cctv", cctvOk ? "ok" : "waiting", `${cctv.filter(camera => camera && camera.fresh).length}/${cctv.length} fresh`],
     ["robot telemetry", robotObsOk ? "ok" : "waiting", "from locomotion observation topic"],
-    ["navdp", navdpOk ? "ok" : "waiting", "planning results mirrored in core"],
-    ["locomotion", locomotionOk ? "ok" : "waiting", "command outputs mirrored in core"],
+    ["navdp", navdpOk ? "ok" : "waiting", "actual planner result frequency"],
+    ["locomotion", locomotionOk ? "ok" : "waiting", "actual locomotion result frequency"],
   ];
   moduleSummary.innerHTML = items.map(([name, status, note]) => `
     <div class="summary-card">
@@ -693,9 +866,13 @@ function renderWorldState(data) {
   drawSceneMap(worldCanvas, data, null);
   const robots = Object.entries(data.robots || {});
   const intruders = Object.entries(data.intruders || {});
+  const perception = data.perception || {};
+  const marl = data.marl || {};
   const modules = [
     ["Simulation", data.aggregate_state, `aggregate ${fmtNum(data.aggregate_state.age_sec)} s`],
     ["Core State Mirror", { seen: true, fresh: true, hz: 1 / 0.1 }, `${data.topic_prefix}`],
+    ["Perception", perception, perception.seen ? `intruder ${perception.intruder_estimate && perception.intruder_estimate.detected ? "detected" : "pending"}` : "awaiting core-perception updates"],
+    ["MARL", marl, marl.seen ? `${marl.policy_mode || "-"} / ${Object.keys((marl.subgoals || {})).length} subgoals` : "awaiting core-marl updates"],
     ["NavDP", robots.find(([, robot]) => robot.planning && robot.planning.seen)?.[1]?.planning || {}, `${robots.filter(([, robot]) => robot.planning && robot.planning.fresh).length}/${robots.length} fresh`],
     ["Locomotion", robots.find(([, robot]) => robot.locomotion && robot.locomotion.seen)?.[1]?.locomotion || {}, `${robots.filter(([, robot]) => robot.locomotion && robot.locomotion.fresh).length}/${robots.length} fresh`],
   ];
@@ -732,12 +909,42 @@ function renderWorldState(data) {
       </div>`);
   }
 
+  const cctv = Object.entries(data.cctv_cameras || {});
+  const cctvSemantics = data.cctv_semantics || {};
+  worldCctvGrid.innerHTML = "";
+  for (const [cameraId, camera] of cctv) {
+    const semantic = cctvSemantics[cameraId] || {};
+    const image = camera.image ? `<img src="${camera.image}" alt="${cameraId} CCTV" />` : `<span class="mono">waiting for ${cameraId}</span>`;
+    worldCctvGrid.insertAdjacentHTML("beforeend", `
+      <div class="summary-card">
+        <div class="panel-title"><span>${cameraId}</span><span>${dot(normStatus(camera))}</span></div>
+        <div class="chip-row">
+          <span class="chip">freq ${fmtHz(camera.hz)}</span>
+          <span class="chip">seg ${fmtHz(semantic.hz)}</span>
+          <span class="chip">${camera.width || "-"}x${camera.height || "-"}</span>
+        </div>
+        <div class="image-box">${image}</div>
+      </div>`);
+  }
+
   const freshPaths = robots.filter(([, robot]) => robot.planning && robot.planning.fresh).length;
   const freshLocomotion = robots.filter(([, robot]) => robot.locomotion && robot.locomotion.fresh).length;
+  const freshCctv = cctv.filter(([, camera]) => camera && camera.fresh).length;
+  const marlNote = data.marl && data.marl.seen
+    ? `MARL is mirrored at ${fmtHz(data.marl.hz)} in ${data.marl.policy_mode || "-"} mode. `
+    : "MARL has not published a mirrored decision preview yet. ";
+  const perceptionNote = data.perception && data.perception.seen
+    ? `Perception is updating at ${fmtHz(data.perception.hz)} and ${
+        data.perception.intruder_estimate && data.perception.intruder_estimate.detected ? "has" : "does not yet have"
+      } an intruder estimate. `
+    : "Perception has not published a mirrored estimate yet. ";
   worldSummary.textContent =
     `Simulation publishes into Core on ${data.topic_prefix}. ` +
+    marlNote +
+    perceptionNote +
     `${freshPaths}/${robots.length} robots have fresh NavDP routes and ` +
     `${freshLocomotion}/${robots.length} robots have fresh locomotion outputs. ` +
+    `${freshCctv}/${cctv.length} CCTV feeds are fresh. ` +
     `Map view overlays scene geometry, robot headings, intruder position, path waypoints, and LiDAR points.`;
 }
 
@@ -745,13 +952,14 @@ function jointRows(observation, locomotion) {
   const names = Array.isArray(observation.joint_names) ? observation.joint_names : jointOrder;
   const pos = Array.isArray(observation.joint_position_rel) ? observation.joint_position_rel : [];
   const vel = Array.isArray(observation.joint_velocity_rel) ? observation.joint_velocity_rel : [];
-  const action = Array.isArray(locomotion.action) ? locomotion.action : [];
+  const action = Array.isArray(observation.last_action) ? observation.last_action : [];
+  const actionScale = Number(locomotion.action_scale) || 0.25;
   return names.map((name, index) => `
     <tr>
       <td>${name}</td>
       <td>${fmtNum(pos[index], 3)}</td>
       <td>${fmtNum(vel[index], 3)}</td>
-      <td>${fmtNum(action[index], 3)}</td>
+      <td>${fmtNum((Number(action[index]) || 0) * actionScale, 3)}</td>
     </tr>`).join("");
 }
 
@@ -760,7 +968,11 @@ function renderRobotPage(data) {
   for (const [robotId, robot] of Object.entries(data.robots || {})) {
     const pose = robot.pose || {};
     const camera = robot.camera || {};
+    const depth = robot.depth || {};
+    const semantic = robot.semantic || {};
+    const imu = robot.imu || {};
     const lidar = robot.lidar || {};
+    const lidarPoints = robot.lidar_points || {};
     const observation = robot.observation || {};
     const locomotion = robot.locomotion || {};
     const cameraHtml = camera.image ? `<img src="${camera.image}" alt="${robotId} camera" />` : `<span class="mono">waiting for camera</span>`;
@@ -772,7 +984,11 @@ function renderRobotPage(data) {
         <span class="chip">pose ${fmtVec(pose.position)}</span>
         <span class="chip">speed ${fmtNum(observation.planar_speed)} m/s</span>
         <span class="chip">camera ${fmtHz(camera.hz)}</span>
+        <span class="chip">depth ${fmtHz(depth.hz)}</span>
+        <span class="chip">seg ${fmtHz(semantic.hz)}</span>
+        <span class="chip">imu ${fmtHz(imu.hz)}</span>
         <span class="chip">lidar ${fmtHz(lidar.hz)}</span>
+        <span class="chip">cloud ${fmtHz(lidarPoints.hz)} / ${lidarPoints.point_count || 0} pts</span>
       </div>
       <div class="robot-layout">
         <div class="stack">
@@ -804,12 +1020,12 @@ function renderRobotPage(data) {
       <div style="margin-top:10px">
         <div class="subheading">Joint Telemetry</div>
         <table>
-          <thead><tr><th>Joint</th><th>Pos Rel</th><th>Vel Rel</th><th>Action</th></tr></thead>
+          <thead><tr><th>Joint</th><th>Observed Pos Rel</th><th>Observed Vel Rel</th><th>Target Pos Rel</th></tr></thead>
           <tbody>${jointRows(observation, locomotion)}</tbody>
         </table>
       </div>`;
     robotGrid.appendChild(card);
-    drawLidar(card.querySelector('[data-role="lidar"]'), lidar);
+    drawLidar(card.querySelector('[data-role="lidar"]'), lidar, lidarPoints);
     drawDogPose(card.querySelector('[data-role="pose"]'), observation.joint_position_rel, "#1b6fd1", 1.0);
   }
 }
@@ -864,6 +1080,367 @@ function renderNavdpPage(data) {
   }
 }
 
+function computeXyError(estPos, gtPos) {
+  if (!Array.isArray(estPos) || !Array.isArray(gtPos) || estPos.length < 2 || gtPos.length < 2) return null;
+  const dx = estPos[0] - gtPos[0];
+  const dy = estPos[1] - gtPos[1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function drawPerceptionComparisonMap(canvas, data) {
+  const ctx = canvas.getContext("2d");
+  const bounds = buildWorldBounds(data);
+  const proj = makeProjector(canvas, bounds);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fbfcff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const stepMeters = 1;
+  ctx.strokeStyle = "#e2e8f1";
+  ctx.lineWidth = 1;
+  for (let x = Math.ceil(bounds.xmin); x <= bounds.xmax; x += stepMeters) {
+    ctx.beginPath(); ctx.moveTo(proj.x(x), proj.y(bounds.ymin)); ctx.lineTo(proj.x(x), proj.y(bounds.ymax)); ctx.stroke();
+  }
+  for (let y = Math.ceil(bounds.ymin); y <= bounds.ymax; y += stepMeters) {
+    ctx.beginPath(); ctx.moveTo(proj.x(bounds.xmin), proj.y(y)); ctx.lineTo(proj.x(bounds.xmax), proj.y(y)); ctx.stroke();
+  }
+  for (const rect of SCENE_MAP.rects || []) {
+    const color = rect.kind === "floor" ? "#d8d8ce" : (rect.kind === "wall" ? "#2d3138" : "#aa654f");
+    ctx.fillStyle = color;
+    const w = rect.scale[0] * proj.scale;
+    const h = rect.scale[1] * proj.scale;
+    ctx.fillRect(proj.x(rect.center[0]) - w * 0.5, proj.y(rect.center[1]) - h * 0.5, w, h);
+  }
+
+  const perception = data.perception || {};
+
+  // Draw ground truth intruder (red X)
+  for (const [intruderId, intruder] of Object.entries(data.intruders || {})) {
+    const pose = intruder.pose || {};
+    if (!Array.isArray(pose.position)) continue;
+    const x = proj.x(pose.position[0]);
+    const y = proj.y(pose.position[1]);
+    ctx.strokeStyle = "#c94b42";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x - 8, y - 8); ctx.lineTo(x + 8, y + 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 8, y - 8); ctx.lineTo(x - 8, y + 8); ctx.stroke();
+    ctx.fillStyle = "#c94b42";
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.fillText("GT " + intruderId, x + 12, y - 10);
+  }
+
+  // Draw perception intruder estimate (orange diamond)
+  const intruderEst = perception.intruder_estimate || {};
+  if (intruderEst.detected && Array.isArray(intruderEst.position_world)) {
+    const ex = proj.x(intruderEst.position_world[0]);
+    const ey = proj.y(intruderEst.position_world[1]);
+    ctx.fillStyle = "#e09b15";
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 10); ctx.lineTo(ex + 8, ey); ctx.lineTo(ex, ey + 10); ctx.lineTo(ex - 8, ey);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#e09b15";
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.fillText("EST intruder", ex + 12, ey + 4);
+
+    // Draw error line between GT and estimate
+    for (const intruder of Object.values(data.intruders || {})) {
+      const pose = intruder.pose || {};
+      if (!Array.isArray(pose.position)) continue;
+      const gx = proj.x(pose.position[0]);
+      const gy = proj.y(pose.position[1]);
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "#e09b15";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Draw ground truth dogs (filled circle) and estimated dogs (ring)
+  for (const [robotId, robot] of Object.entries(data.robots || {})) {
+    const pose = robot.pose || {};
+    const estimate = (perception.dogs || {})[robotId] || {};
+    const color = robotId === "agent_1" ? "#2a8d62" : "#1b6fd1";
+    // GT
+    if (Array.isArray(pose.position)) {
+      const gx = proj.x(pose.position[0]);
+      const gy = proj.y(pose.position[1]);
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(gx, gy, 8, 0, Math.PI * 2); ctx.fill();
+      drawArrow(ctx, gx, gy, yawFromPose(pose), 14, color);
+      ctx.fillStyle = "#1b2430";
+      ctx.font = "12px ui-monospace, monospace";
+      ctx.fillText("GT " + robotId, gx + 10, gy - 12);
+    }
+    // Estimate
+    if (estimate.detected && Array.isArray(estimate.position_world)) {
+      const ex = proj.x(estimate.position_world[0]);
+      const ey = proj.y(estimate.position_world[1]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ex, ey, 10, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText("EST", ex + 14, ey + 4);
+      // Error line
+      if (Array.isArray(pose.position)) {
+        const gx = proj.x(pose.position[0]);
+        const gy = proj.y(pose.position[1]);
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  // Legend
+  ctx.fillStyle = "#4d5b71";
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.fillText("● GT (filled)    ○ EST (ring)    ◆ EST intruder    ✕ GT intruder", 10, canvas.height - 10);
+}
+
+function renderPerceptionPage(data) {
+  perceptionGrid.innerHTML = "";
+  const perception = data.perception || {};
+  const intruder = perception.intruder_estimate || {};
+
+  // --- Comparison Map ---
+  const mapCard = document.createElement("div");
+  mapCard.className = "module-card";
+  mapCard.innerHTML = `
+    <div class="panel-title"><span>Perception vs Ground Truth Map</span><span>${dot(normStatus(perception))}</span></div>
+    <div class="small-note" style="margin-bottom:8px">Filled markers = ground truth from simulation. Rings/diamonds = perception estimates. Dashed lines show error.</div>
+    <canvas id="perception-comparison-map" width="1024" height="600"></canvas>`;
+  perceptionGrid.appendChild(mapCard);
+  drawPerceptionComparisonMap(mapCard.querySelector("#perception-comparison-map"), data);
+
+  // --- Intruder Estimate vs GT ---
+  const gtIntruder = Object.values(data.intruders || {})[0] || {};
+  const gtIntruderPose = gtIntruder.pose || {};
+  const intruderXyError = computeXyError(intruder.position_world, gtIntruderPose.position);
+
+  const intruderCard = document.createElement("div");
+  intruderCard.className = "module-card";
+  intruderCard.innerHTML = `
+    <div class="panel-title"><span>Intruder: Estimate vs Ground Truth</span><span>${dot(intruder.detected ? "ok" : "waiting")}</span></div>
+    <div class="chip-row">
+      <span class="chip">freq ${fmtHz(perception.hz)}</span>
+      <span class="chip">pipeline ${perception.pipeline || "-"}</span>
+      <span class="chip">step ${perception.step || "-"}</span>
+    </div>
+    <table>
+      <thead><tr><th>Field</th><th>Perception Estimate</th><th>Ground Truth (Sim)</th><th>Error</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Position XY</b></td>
+          <td class="mono">${fmtVec(intruder.position_world)}</td>
+          <td class="mono">${fmtVec(gtIntruderPose.position)}</td>
+          <td style="font-weight:650;color:${intruderXyError !== null && intruderXyError < 0.5 ? '#24a35f' : '#c94b42'}">${intruderXyError !== null ? intruderXyError.toFixed(3) + " m" : "-"}</td>
+        </tr>
+        <tr>
+          <td>Detected</td>
+          <td>${intruder.detected ? "✅ yes" : "❌ no"}</td>
+          <td>-</td>
+          <td>-</td>
+        </tr>
+        <tr>
+          <td>Confidence</td>
+          <td>${fmtNum(intruder.confidence, 3)}</td>
+          <td>-</td>
+          <td>-</td>
+        </tr>
+        <tr>
+          <td>Camera Detections</td>
+          <td>${intruder.camera_detections || 0}</td>
+          <td>-</td>
+          <td>-</td>
+        </tr>
+        <tr>
+          <td>LiDAR Detections</td>
+          <td>${intruder.lidar_detections || 0}</td>
+          <td>-</td>
+          <td>-</td>
+        </tr>
+      </tbody>
+    </table>`;
+  perceptionGrid.appendChild(intruderCard);
+
+  // --- Per-Dog Estimate vs GT ---
+  for (const [robotId, robot] of Object.entries(data.robots || {})) {
+    const estimate = (perception.dogs || {})[robotId] || {};
+    const gtPose = robot.pose || {};
+    const camera = robot.camera || {};
+    const lidar = robot.lidar || {};
+    const lidarPoints = robot.lidar_points || {};
+    const dogXyError = estimate.xy_error_m;
+    const estPos = estimate.position_world;
+    const gtPos = gtPose.position;
+
+    const observation = robot.observation || {};
+    const gtVel = observation.base_linear_velocity;
+    const gtSpeed = observation.planar_speed;
+
+    const card = document.createElement("div");
+    card.className = "module-card";
+    card.innerHTML = `
+      <div class="panel-title"><span>${robotId}: Estimate vs Ground Truth</span><span>${dot(estimate.detected ? (estimate.localized ? "ok" : "stale") : "waiting")}</span></div>
+      <div class="chip-row">
+        <span class="chip">localized ${estimate.localized ? "✅" : "❌"}</span>
+        <span class="chip" style="font-weight:650;color:${dogXyError != null && dogXyError < 0.3 ? '#24a35f' : '#c94b42'}">xy error ${fmtNum(dogXyError, 3)} m</span>
+        <span class="chip">scan score ${fmtNum(estimate.scan_match_score, 3)}</span>
+        <span class="chip">scan inliers ${estimate.scan_inliers || 0}</span>
+      </div>
+      <table>
+        <thead><tr><th>Field</th><th>Perception Estimate</th><th>Ground Truth (Sim)</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Position</b></td>
+            <td class="mono">${fmtVec(estPos)}</td>
+            <td class="mono">${fmtVec(gtPos)}</td>
+          </tr>
+          <tr>
+            <td><b>Velocity</b></td>
+            <td class="mono">${fmtVec(estimate.velocity_world)}</td>
+            <td class="mono">${fmtVec(gtVel)} <span style="color:#5d6980">(body)</span></td>
+          </tr>
+          <tr>
+            <td><b>Planar Speed</b></td>
+            <td class="mono">${fmtNum(Array.isArray(estimate.velocity_world) ? Math.hypot(estimate.velocity_world[0] || 0, estimate.velocity_world[1] || 0) : null, 3)} m/s</td>
+            <td class="mono">${fmtNum(gtSpeed, 3)} m/s</td>
+          </tr>
+          <tr>
+            <td><b>Yaw</b></td>
+            <td>${fmtNum(estimate.yaw_rad)} rad</td>
+            <td>${fmtNum(gtPose.yaw)} rad</td>
+          </tr>
+          <tr>
+            <td>Prediction Only</td>
+            <td>${estimate.used_prediction_only ? "⚠️ yes" : "no"}</td>
+            <td>-</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="split" style="margin-top:10px">
+        <div class="stack">
+          <div>
+            <div class="subheading">Camera Input</div>
+            <div class="image-box">${camera.image ? `<img src="${camera.image}" alt="${robotId} camera" />` : `<span class="mono">waiting for camera</span>`}</div>
+          </div>
+        </div>
+        <div class="stack">
+          <div>
+            <div class="subheading">LiDAR Evidence</div>
+            <canvas width="360" height="220" data-role="perception-lidar"></canvas>
+          </div>
+        </div>
+      </div>`;
+    perceptionGrid.appendChild(card);
+    drawLidar(card.querySelector('[data-role="perception-lidar"]'), lidar, lidarPoints);
+  }
+}
+
+function renderMarlPage(data) {
+  marlGrid.innerHTML = "";
+  const marl = data.marl || {};
+  const subgoals = marl.subgoals || {};
+  const input = marl.input || {};
+
+  const statusCard = document.createElement("div");
+  statusCard.className = "module-card";
+  statusCard.innerHTML = `
+    <div class="panel-title"><span>MARL Runtime</span><span>${dot(normStatus(marl))}</span></div>
+    <div class="chip-row">
+      <span class="chip">mode ${marl.policy_mode || "-"}</span>
+      <span class="chip">freq ${fmtHz(marl.hz)}</span>
+      <span class="chip">age ${fmtNum(marl.age_sec)} s</span>
+      <span class="chip">obs ${marl.obs_dim || 13}D</span>
+    </div>
+    <div class="metric-list">
+      <div class="metric"><div class="label">Action Semantics</div><div class="value mono">${marl.action_semantics || "-"}</div></div>
+      <div class="metric"><div class="label">Checkpoint Loaded</div><div class="value">${marl.checkpoint_loaded ? "yes" : "no"}</div></div>
+      <div class="metric"><div class="label">Checkpoint</div><div class="value mono">${marl.checkpoint || "-"}</div></div>
+      <div class="metric"><div class="label">Load Error</div><div class="value mono">${marl.load_error || "-"}</div></div>
+    </div>`;
+  marlGrid.appendChild(statusCard);
+
+  const mapCard = document.createElement("div");
+  mapCard.className = "module-card";
+  mapCard.innerHTML = `
+    <div class="panel-title"><span>Decision Overlay</span><span>${dot(normStatus(marl))}</span></div>
+    <div class="small-note" style="margin-bottom:8px">Dashed lines show robot to MARL subgoal. Red arrows show subgoal to intruder. This is a mirrored preview only.</div>
+    <canvas width="1024" height="560" data-role="marl-map"></canvas>`;
+  marlGrid.appendChild(mapCard);
+  drawMarlMap(mapCard.querySelector('[data-role="marl-map"]'), {
+    ...data,
+    robots: Object.fromEntries(Object.entries(data.robots || {}).map(([robotId, robot]) => [
+      robotId,
+      { ...robot, planning: { ...(robot.planning || {}), subgoal: (subgoals[robotId] || {}).subgoal || (robot.planning || {}).subgoal } },
+    ])),
+  }, null);
+
+  for (const [robotId, robot] of Object.entries(data.robots || {})) {
+    const robotInput = (input.robots || {})[robotId] || {};
+    const subgoal = subgoals[robotId] || {};
+    const pose = robot.pose || {};
+    const observation = robot.observation || {};
+    const card = document.createElement("div");
+    card.className = "module-card";
+    card.innerHTML = `
+      <div class="panel-title"><span>${robotId}</span><span>${dot(subgoal.subgoal ? "ok" : "waiting")}</span></div>
+      <div class="chip-row">
+        <span class="chip">mode ${subgoal.mode || "-"}</span>
+        <span class="chip">priority ${subgoal.priority || "-"}</span>
+        <span class="chip">pose ${fmtVec(pose.position)}</span>
+      </div>
+      <div class="split">
+        <div class="stack">
+          <div>
+            <div class="subheading">Decision Input</div>
+            <div class="metric-list">
+              <div class="metric"><div class="label">Robot Position</div><div class="value mono">${fmtVec(robotInput.position)}</div></div>
+              <div class="metric"><div class="label">Robot Velocity</div><div class="value mono">${fmtVec(robotInput.velocity)}</div></div>
+              <div class="metric"><div class="label">Observation Speed</div><div class="value">${fmtNum(observation.planar_speed, 3)} m/s</div></div>
+              <div class="metric"><div class="label">Intruder Position</div><div class="value mono">${fmtVec((input.intruder || {}).position)}</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="subheading">Decision Output</div>
+            <div class="metric-list">
+              <div class="metric"><div class="label">Subgoal</div><div class="value mono">${fmtVec(subgoal.subgoal)}</div></div>
+              <div class="metric"><div class="label">Offset</div><div class="value mono">${fmtVec(subgoal.offset)}</div></div>
+              <div class="metric"><div class="label">Action Mode</div><div class="value">${subgoal.mode || "-"}</div></div>
+              <div class="metric"><div class="label">Priority</div><div class="value">${subgoal.priority || "-"}</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="stack">
+          <div>
+            <div class="subheading">Local Spatial View</div>
+            <canvas width="360" height="360" data-role="marl-map-${robotId}"></canvas>
+          </div>
+          <div class="small-note mono">
+            input_robot ${fmtVec(robotInput.position)}<br />
+            input_vel ${fmtVec(robotInput.velocity)}<br />
+            intruder ${fmtVec((input.intruder || {}).position)}<br />
+            output_subgoal ${fmtVec(subgoal.subgoal)}<br />
+            output_offset ${fmtVec(subgoal.offset)}
+          </div>
+        </div>
+      </div>`;
+    marlGrid.appendChild(card);
+    drawMarlMap(card.querySelector(`[data-role="marl-map-${robotId}"]`), {
+      ...data,
+      robots: Object.fromEntries(Object.entries(data.robots || {}).map(([rid, item]) => [
+        rid,
+        { ...item, planning: { ...(item.planning || {}), subgoal: (subgoals[rid] || {}).subgoal || (item.planning || {}).subgoal } },
+      ])),
+    }, robotId);
+  }
+}
+
 function renderLocomotionPage(data) {
   locomotionGrid.innerHTML = "";
   for (const [robotId, robot] of Object.entries(data.robots || {})) {
@@ -897,14 +1474,15 @@ function renderLocomotionPage(data) {
         </div>
         <div class="stack">
           <div>
-            <div class="subheading">Observed vs Commanded</div>
+            <div class="subheading">Observed vs Last Applied Target Relative Joint Pose</div>
             <table>
-              <thead><tr><th>Joint</th><th>Observed</th><th>Command</th></tr></thead>
+              <thead><tr><th>Joint</th><th>Observed Pos Rel</th><th>Observed Vel Rel</th><th>Target Pos Rel</th></tr></thead>
               <tbody>${jointOrder.map((name, index) => `
                 <tr>
                   <td>${name}</td>
                   <td>${fmtNum(Array.isArray(observation.joint_position_rel) ? observation.joint_position_rel[index] : null, 3)}</td>
-                  <td>${fmtNum(action[index], 3)}</td>
+                  <td>${fmtNum(Array.isArray(observation.joint_velocity_rel) ? observation.joint_velocity_rel[index] : null, 3)}</td>
+                  <td>${fmtNum((Number(Array.isArray(observation.last_action) ? observation.last_action[index] : null) || 0) * actionScale, 3)}</td>
                 </tr>`).join("")}</tbody>
             </table>
           </div>
@@ -920,6 +1498,8 @@ function renderAll(data) {
   renderModuleSummary(data);
   renderWorldState(data);
   renderRobotPage(data);
+  renderPerceptionPage(data);
+  renderMarlPage(data);
   renderNavdpPage(data);
   renderLocomotionPage(data);
 }

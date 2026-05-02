@@ -107,9 +107,11 @@ The strategy:
 
 ### Done When
 
-* target estimate is generated each timestep
-* decision can consume it
-* confidence / visible fields valid
+* target estimate is generated each timestep ✅
+* decision can consume it ✅
+* confidence / visible fields valid ✅
+* Perception runs as independent HTTP adapter on port 8891 ✅
+* Dog self-localization and intruder detection operational ✅
 
 ---
 

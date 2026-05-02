@@ -173,10 +173,10 @@ Current ownership:
 * Core Communication Layer: `core`
 * Visualization: `core`
 * ROS2 tooling / bringup: `ros2`
-* future Perception: `perception`
+* Perception: `perception`
 * future Decision Making: `decision`
-* future NavDP Path Planning: `planning`
-* future Locomotion: `locomotion`
+* NavDP Path Planning: `navdp`
+* Locomotion: `locomotion`
 * future Logger / Replay / Evaluation: `logger`
 
 No module should rely on another module's Conda environment, Python packages, or
@@ -350,29 +350,53 @@ system observations.
 
 It is responsible for:
 
-* fusing multi-source observations
-* estimating target position in the unified world frame
-* estimating target velocity
-* producing short-term prediction when the target is temporarily lost
+* fusing multi-source observations (CCTV cameras, dog cameras, dog LiDAR, IMU)
+* estimating dog poses via IMU propagation + LiDAR scan-to-map correction
+* estimating intruder position in the unified world frame
+* estimating intruder velocity
+* producing short-term prediction when the intruder is temporarily lost
 * outputting confidence and visibility state
 * supporting future generalization across environments, sensor counts, and sensor layouts
 
-It only estimates target state. It does not make decisions.
+It estimates both dog poses and intruder state. It does not make decisions.
+
+---
+
+### Current Implementation
+
+Perception is now an independent module with its own runtime environment
+(`perception` conda env) and HTTP adapter (`perception_service.py` on port 8891).
+
+The perception pipeline consists of:
+
+* **Dog self-localization** (`DogLocalizer`): IMU propagation + LiDAR scan-to-map ICP correction
+* **Intruder camera detection** (`CameraDetector`): semantic segmentation with monocular ground-plane projection from CCTV and dog cameras
+* **Intruder LiDAR detection** (`LidarDetector`): dynamic cluster detection from dog-mounted LiDAR
+* **Sensor fusion** (`SensorFusion`): robust camera/LiDAR fusion with Kalman tracking over `[x, y, vx, vy]`
+
+The module exposes a `PerceptionPipeline` API:
+
+```python
+from perception.pipeline import PerceptionPipeline
+pipeline = PerceptionPipeline(...)
+output = pipeline.update(frame)  # EnvironmentSensorFrame -> PerceptionOutput
+```
 
 ---
 
 ### Receives
 
-Perception / Target Estimation may receive:
+Perception / Target Estimation receives via Core HTTP payloads:
 
-* multi-camera observations
-* LiDAR / laser observations
-* IMU / odometry-related state
-* robot poses
-* sensor metadata
-* timestamp, frame, robot_id, episode_id, and other shared metadata
+* robot poses (position, orientation)
+* dog camera RGB, depth, semantic segmentation images
+* dog LiDAR point clouds
+* dog IMU data (angular velocity, linear acceleration)
+* dog locomotion observation (projected gravity, base velocity)
+* CCTV camera RGB and semantic segmentation images
+* intruder pose (for ground-truth evaluation only)
 
-These inputs should be standardized by the Core Communication Layer before being
+These inputs are standardized by the Core Communication Layer before being
 sent to the module.
 
 ---
@@ -381,11 +405,12 @@ sent to the module.
 
 Perception / Target Estimation sends:
 
-* target position estimate
-* target velocity estimate
-* short-term predicted target position
-* confidence
-* visibility state
+* dog pose estimates (position, velocity, orientation, localization status, scan match quality)
+* intruder position estimate
+* intruder velocity estimate
+* detection confidence
+* number of camera and LiDAR detections
+* input summary (which sensors were present)
 * timestamp
 
 ---
@@ -393,12 +418,12 @@ Perception / Target Estimation sends:
 ### Communication
 
 Perception / Target Estimation communicates with the Core Communication Layer
-through gRPC.
+through HTTP (Version 1).
 
-Version 1 can use either:
+Core calls the Perception adapter asynchronously at a configurable
+`perception_period` (default 0.04s, i.e. 25 Hz).
 
-* gRPC streaming
-* frame-triggered gRPC calls
+Future versions may migrate to gRPC streaming.
 
 ---
 

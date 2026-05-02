@@ -2,8 +2,8 @@
 actor.py
 Actor (policy) network for MAPPO.
 
-Input:  local observation  (obs_dim = 12)
-Output: Gaussian distribution over subgoal [x, y] in world frame.
+Input:  local observation  (obs_dim = 13 in the current pursuit setup)
+Output: Gaussian distribution over world-frame relative offset [dx, dy].
 
 Parameter sharing: a single actor instance is used for ALL agents.
 """
@@ -18,7 +18,7 @@ from torch.distributions import Normal
 class Actor(nn.Module):
     def __init__(
         self,
-        obs_dim:    int   = 12,
+        obs_dim:    int   = 13,
         action_dim: int   = 2,
         hidden_dim: int   = 64,
         map_half:   float = 10.0,

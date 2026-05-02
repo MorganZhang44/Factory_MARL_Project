@@ -79,14 +79,14 @@ The goal is to:
 
 ## 5. Perception
 
-* Initial version may:
+* Now an independent module with its own runtime environment (`perception`)
+* Current implementation uses:
 
-  * directly pass through ground truth
-* No sensor noise in Version 1
-* `visible` flag may be:
-
-  * always true (early stage)
-  * manually controlled
+  * dog self-localization via IMU + LiDAR scan matching
+  * intruder detection via CCTV semantic segmentation + LiDAR clustering
+  * robust sensor fusion with Kalman tracking
+* Ground truth is available for evaluation/logging only
+* `visible` flag is derived from sensor detection confidence
 
 ---
 

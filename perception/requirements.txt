@@ -1,0 +1,26 @@
+# Python dependencies for this multiagent perception/environment workspace.
+#
+# Important:
+# - NVIDIA Isaac Sim / Isaac Lab are not installed by this file.
+# - Install Isaac Sim + Isaac Lab first, then install these packages inside the
+#   Isaac-compatible Python environment.
+# - The currently tested interpreter is:
+#   /home/ming/anaconda3/envs/env_isaaclab/bin/python
+# - On the current machine, Isaac runs require:
+#   LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+numpy==1.26.0
+torch==2.7.0
+opencv-python==4.11.0.86
+matplotlib==3.10.0
+
+# Optional analysis / utility packages. They are useful for notebooks and
+# offline result inspection, but the main simulation path does not require all
+# of them on every run.
+pandas==2.3.3
+scipy==1.15.3
+scikit-learn==1.7.2
+imageio==2.37.0
+Pillow==11.2.1

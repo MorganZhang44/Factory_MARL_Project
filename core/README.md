@@ -24,6 +24,8 @@ Responsibilities in Version 1:
 * run the Core-owned Web Dashboard frontend together with the control layer
 * expose one central place where later perception, decision, planning, and
   locomotion modules can be routed
+* mirror MARL runtime inputs/outputs for observability without forcing MARL
+  into the active control loop yet
 
 The Core module should not own Simulation logic. Simulation-side publishers live
 under `simulation/ros2`.
@@ -49,3 +51,12 @@ http://localhost:8765
 The dashboard reads the Core-owned state API through WebSocket. It must not
 subscribe to Simulation ROS2 topics and must not be inserted into the control
 loop.
+
+Current dashboard pages include:
+
+* `WorldState`
+* `Robot`
+* `Perception`
+* `MARL`
+* `NavDP`
+* `Locomotion`

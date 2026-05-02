@@ -18,6 +18,7 @@ All modules:
 * Simulation
 * Perception / Target Estimation
 * Decision Making
+* MARL Decision Module
 * NavDP Path Planning
 * Locomotion
 * Core Communication Layer
@@ -60,26 +61,33 @@ All modules:
 
 ### Role
 
-* Convert raw simulation state into **target estimate**
-* Handle visibility and uncertainty
+* Convert raw simulation sensor data into **dog pose estimates** and **intruder pose estimates**
+* Handle visibility, uncertainty, and sensor fusion
 
 ### Input
 
-* `simulation/state`
+* `simulation/state` (robot poses, intruder pose, sensor data)
+* Robot IMU, LiDAR, camera, CCTV semantic segmentation
 
 ### Output
 
-* `perception/target_estimate`
+* `perception/target_estimate` (intruder position, velocity, confidence)
+* Dog pose estimates (position, velocity, orientation, localization status)
 
 ### Notes
 
-* In Version 1:
+* Now an independent module with its own runtime environment (`perception`)
+* Runs as an HTTP adapter on port `8891`
+* Current implementation includes:
 
-  * may directly pass through ground truth
-* In future:
-
-  * must handle partial observability
-  * estimate target state from sensor data
+  * **Dog self-localization**: IMU propagation + LiDAR scan-to-map correction
+  * **Intruder detection**: CCTV semantic segmentation with monocular ground-plane projection, dog camera semantic/depth detections, LiDAR dynamic cluster detection
+  * **Sensor fusion**: robust camera/LiDAR fusion with Kalman tracking over `[x, y, vx, vy]`
+* Ground truth is available for evaluation/logging only, not used as measurement input
+* Perception does **not** consume locomotion policy observation vectors
+* Core calls Perception asynchronously through Core only
+* `perception_period` is interpreted on the simulation timeline, not wall-clock time
+* Default `perception_period = 0.04` means one Perception update every `0.04` simulated seconds
 
 ---
 
@@ -107,7 +115,40 @@ All modules:
 
 ---
 
-## 4. NavDP Path Planning
+## 4. MARL Decision Module
+
+### Role
+
+* Provide a standalone multi-agent decision policy runtime
+* Convert mirrored multi-agent state into one subgoal per agent
+* Act as the concrete runtime candidate for the Decision layer
+
+### Input
+
+* `agent_1` world position / velocity
+* `agent_2` world position / velocity
+* `intruder_1` world position / velocity
+
+### Output
+
+* one world-frame `subgoal` per agent
+
+### Notes
+
+* Runs only in the `marl` environment
+* Current service adapter runs on port `8892`
+* Current action semantics are:
+
+  * policy outputs **world-frame relative offsets**
+  * adapter converts them into **world-frame subgoals**
+* Current integration stage:
+
+  * Core mirrors MARL inputs and outputs for visualization
+  * MARL does **not** yet replace the active control path by default
+
+---
+
+## 5. NavDP Path Planning
 
 ### Role
 
@@ -134,7 +175,7 @@ All modules:
 
 ---
 
-## 5. Locomotion
+## 6. Locomotion
 
 ### Role
 
@@ -157,7 +198,7 @@ All modules:
 
 ---
 
-## 6. Core Communication Layer
+## 7. Core Communication Layer
 
 ### Role
 
@@ -208,7 +249,7 @@ The communication layer does NOT:
 
 ---
 
-## 7. Logger / Replay / Evaluation
+## 8. Logger / Replay / Evaluation
 
 ### Role
 

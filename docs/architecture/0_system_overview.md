@@ -147,6 +147,9 @@ Current local environment ownership:
 
 * Simulation runs in `isaaclab51`
 * Core Communication Layer and Visualization run in `core`
+* Perception runs in `perception`
+* NavDP runs in `navdp`
+* Locomotion runs in `locomotion`
 * ROS2 tooling / bringup runs in `ros2`
 
 ---
@@ -157,8 +160,8 @@ Current local environment ownership:
 
 * Isaac Sim / Isaac Lab simulation scene
 * 2 agents + 1 intruder
-* simplified perception (can use ground truth)
-* MARL decision module
+* perception module with dog self-localization and intruder detection
+* MARL decision module (initial rule-based, MAPPO training in progress)
 * path planning and locomotion
 * communication layer abstraction
 

@@ -44,6 +44,7 @@ Current ownership:
 
 * Simulation: `isaaclab51`
 * Core and Visualization: `core`
+* Perception: `perception`
 * ROS2 tooling / bringup: `ros2`
 * NavDP: `navdp`
 * Locomotion: `locomotion`
@@ -140,6 +141,7 @@ Docker should be introduced in stages.
 
 These modules should be Dockerized first:
 
+* Perception
 * Core
 * NavDP
 * Locomotion
@@ -149,6 +151,12 @@ Reason:
 * they behave like standard services
 * they are easier to containerize
 * they bring immediate sharing value
+
+Current status:
+
+* `perception`, `core`, `navdp`, and `locomotion` now have Docker support in
+  the repo
+* `marl` is intentionally left out of the shared Docker path for now
 
 ### Stage 2: Simulation
 

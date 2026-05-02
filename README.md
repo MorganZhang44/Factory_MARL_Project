@@ -10,6 +10,14 @@ Simulation -> Core -> NavDP -> Locomotion -> Simulation
 
 可视化属于 Core，本身只读取 Core 的状态镜像，不直接进入控制闭环。
 
+当前 `marl` 已经作为独立模块接入到 Core 的观测链路中：
+
+```text
+Simulation -> Core -> MARL (mirrored only) -> Dashboard
+```
+
+它现在会独立运行、独立可视化，但**默认还不接管正式控制闭环**。
+
 这个项目当前的组织原则是：
 
 * 每个模块保持自己的运行边界
@@ -26,6 +34,8 @@ Simulation -> Core -> NavDP -> Locomotion -> Simulation
 
 * `simulation/` - Isaac Sim / Isaac Lab 场景运行模块
 * `core/` - 总通信层与 dashboard
+* `perception/` - 感知模块（狗自定位 + 入侵者检测 + 传感器融合）
+* `marl/` - 多智能体决策模块（当前独立服务化，默认只做镜像与可视化）
 * `navdp/` - 路径规划适配层与真实 NavDP 接入
 * `locomotion/` - 低层运动适配层与 policy
 * `ros2/` - ROS2 工具、launch 资产和工作区相关内容
@@ -51,6 +61,8 @@ Simulation -> Core -> NavDP -> Locomotion -> Simulation
 
 * `simulation` -> `isaaclab51`
 * `core` + dashboard -> `core`
+* `perception` -> `perception`
+* `marl` -> `marl`
 * `navdp` -> `navdp`
 * `locomotion` -> `locomotion`
 * `ros2/` 当前保留为工具和 launch 资产，不作为单独部署的运行服务
@@ -81,7 +93,15 @@ Simulation -> Core -> NavDP -> Locomotion -> Simulation
 ./scripts/launch_simulation.sh --device cpu
 ```
 
-### 2. NavDP
+### 2. Perception
+
+运行环境：`perception`
+
+```bash
+./scripts/launch_perception.sh
+```
+
+### 3. NavDP
 
 运行环境：`navdp`
 
@@ -103,7 +123,7 @@ planner=auto + device=cpu
 
 这样在真实 NavDP planner 无法满足运行条件时，会自动回退到直线路径基线，而不会直接把共享环境跑死。
 
-### 3. Locomotion
+### 4. Locomotion
 
 运行环境：`locomotion`
 
@@ -111,7 +131,21 @@ planner=auto + device=cpu
 ./scripts/launch_locomotion.sh
 ```
 
-### 4. Core + Dashboard
+### 5. MARL
+
+运行环境：`marl`
+
+```bash
+./scripts/launch_marl.sh
+```
+
+默认服务地址：
+
+```text
+http://127.0.0.1:8892
+```
+
+### 6. Core + Dashboard
 
 运行环境：`core`
 
@@ -135,7 +169,7 @@ http://localhost:8765
 
 ## 推荐启动顺序
 
-建议分 4 个终端启动：
+建议分 6 个终端启动：
 
 ### 终端 1
 
@@ -146,16 +180,28 @@ http://localhost:8765
 ### 终端 2
 
 ```bash
-./scripts/launch_navdp.sh
+./scripts/launch_perception.sh
 ```
 
 ### 终端 3
 
 ```bash
-./scripts/launch_locomotion.sh
+./scripts/launch_navdp.sh
 ```
 
 ### 终端 4
+
+```bash
+./scripts/launch_locomotion.sh
+```
+
+### 终端 5
+
+```bash
+./scripts/launch_marl.sh
+```
+
+### 终端 6
 
 ```bash
 ./scripts/launch_core_dashboard.sh
@@ -179,6 +225,7 @@ http://localhost:8770
 
 目前仓库已经补了这些模块的 Docker 支持：
 
+* `perception`
 * `core`
 * `navdp`
 * `locomotion`
@@ -202,7 +249,7 @@ compose.yaml
 启动共享服务容器：
 
 ```bash
-docker compose up --build core navdp locomotion
+docker compose up --build perception core navdp locomotion
 ```
 
 或者直接：
@@ -213,6 +260,7 @@ docker compose up --build
 
 这会启动：
 
+* Perception
 * Core
 * NavDP
 * Locomotion
@@ -278,6 +326,7 @@ OMNI_KIT_ACCEPT_EULA=YES
 
 使用 Docker 跑：
 
+* `perception`
 * `core`
 * `navdp`
 * `locomotion`
@@ -289,6 +338,18 @@ OMNI_KIT_ACCEPT_EULA=YES
 * Simulation 在宿主机本机运行
 * 其他服务模块走 Docker
 
+如果只想单独起 Perception：
+
+```bash
+docker compose up --build perception
+```
+
+如果想起当前完整服务链（不含 simulation 和 marl）：
+
+```bash
+docker compose up --build perception core navdp locomotion
+```
+
 ---
 
 ## 当前重要端口
@@ -296,6 +357,7 @@ OMNI_KIT_ACCEPT_EULA=YES
 ```text
 Core state API:         8765
 Dashboard frontend:     8770
+Perception adapter:     8891
 NavDP adapter:          8889
 Locomotion adapter:     8890
 ```
@@ -312,6 +374,11 @@ Core：
 
 * `core/ros2/factory_core/factory_core/control_node.py`
 * `core/ros2/factory_core/factory_core/visualization_node.py`
+
+Perception：
+
+* `perception/perception_service.py`
+* `perception/perception/pipeline.py`
 
 NavDP：
 

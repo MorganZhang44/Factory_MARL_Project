@@ -3,21 +3,34 @@
 
 from __future__ import annotations
 
+import math
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import CameraCfg
+from isaaclab.sensors import CameraCfg, ImuCfg, RayCasterCfg, patterns
 from isaaclab.utils import configclass
-from isaaclab_assets.robots.unitree import H1_MINIMAL_CFG, UNITREE_GO2_CFG
+from isaaclab_assets import HUMANOID_CFG
+from isaaclab_assets.robots.unitree import UNITREE_GO2_CFG
 
 
 FLOOR_COLOR = (0.72, 0.72, 0.68)
 WALL_COLOR = (0.08, 0.08, 0.08)
 OBSTACLE_COLOR = (0.36, 0.14, 0.10)
 
-AGENT_1_START_POS = (-4.0, -3.0, 0.4000000059604645)
-AGENT_2_START_POS = (-4.0, 2.2, 0.4000000059604645)
-INTRUDER_START_POS = (4.8, 1.0, 1.0499999523162842)
+AGENT_1_START_POS = (-2.0, -2.0, 0.42)
+AGENT_2_START_POS = (-2.0, 1.6, 0.42)
+INTRUDER_START_POS = (2.0, -0.5, 1.34)
+CCTV_HEIGHT = 4.5
+CCTV_PITCH_DEG = 25.0
+CCTV_CORNER_SPECS = {
+    "cam_nw": {"corner": (-5.50, 3.45), "look_hint": (-2.20, 1.90), "mount_inset": 1.05},
+    "cam_ne": {"corner": (6.25, 3.45), "look_hint": (2.35, 0.85), "mount_inset": 1.10},
+    "cam_e_upper": {"corner": (6.25, -0.95), "look_hint": (2.55, 0.55), "mount_inset": 0.95},
+    "cam_e_lower": {"corner": (3.75, -0.95), "look_hint": (2.35, -0.65), "mount_inset": 0.85},
+    "cam_se": {"corner": (3.75, -4.65), "look_hint": (2.10, -1.45), "mount_inset": 0.95},
+    "cam_sw": {"corner": (-5.50, -4.65), "look_hint": (-2.30, -2.35), "mount_inset": 1.00},
+}
 
 DOG_JOINT_POS = {
     ".*L_hip_joint": 0.1,
@@ -42,6 +55,10 @@ OBSTACLES = (
     ("Obstacle_0000_LeftIsland", (0.425, 1.275, 1.8), (-2.3, -0.85, 0.9)),
     ("Obstacle_0001_CenterIsland", (0.425, 1.375, 1.8), (0.4, -0.95, 0.9)),
     ("Obstacle_0002_RightIsland", (0.45, 1.4, 1.8), (2.95, -0.65, 0.9)),
+)
+
+RAYCAST_MESH_PRIM_PATHS = (
+    "/World/LocalizationStaticMesh",
 )
 
 
@@ -85,15 +102,15 @@ def _go2_cfg(prim_path: str, pos: tuple[float, float, float]) -> ArticulationCfg
     return cfg
 
 
-def _h1_intruder_cfg(prim_path: str, pos: tuple[float, float, float]) -> ArticulationCfg:
-    cfg = H1_MINIMAL_CFG.replace(prim_path=prim_path)
+def _humanoid_intruder_cfg(prim_path: str, pos: tuple[float, float, float]) -> ArticulationCfg:
+    cfg = HUMANOID_CFG.replace(prim_path=prim_path)
     cfg.init_state = ArticulationCfg.InitialStateCfg(
         pos=pos,
         rot=(1.0, 0.0, 0.0, 0.0),
         joint_pos={".*": 0.0},
         joint_vel={".*": 0.0},
     )
-    cfg.spawn.semantic_tags = [("class", "intruder")]
+    cfg.spawn.semantic_tags = [("class", "suspect")]
     return cfg
 
 
@@ -102,19 +119,108 @@ def _front_camera_cfg(prim_path: str) -> CameraCfg:
         prim_path=prim_path,
         spawn=sim_utils.PinholeCameraCfg(
             clipping_range=(0.05, 1000.0),
-            focal_length=24.0,
+            focal_length=3.5,
             focus_distance=400.0,
-            horizontal_aperture=20.955,
+            horizontal_aperture=12.0,
         ),
         width=320,
         height=240,
-        data_types=["rgb"],
+        data_types=["rgb", "depth", "semantic_segmentation"],
+        colorize_semantic_segmentation=False,
         update_period=0.067,
         offset=CameraCfg.OffsetCfg(
-            pos=(0.34, 0.0, 0.12),
+            pos=(0.3, 0.0, 0.1),
             rot=(0.5, 0.5, -0.5, -0.5),
             convention="world",
         ),
+    )
+
+
+def _perception_lidar_cfg(prim_path: str) -> RayCasterCfg:
+    return RayCasterCfg(
+        prim_path=prim_path,
+        ray_alignment="base",
+        pattern_cfg=patterns.LidarPatternCfg(
+            channels=16,
+            vertical_fov_range=(-45.0, 45.0),
+            horizontal_fov_range=(-180.0, 180.0),
+            horizontal_res=1.0,
+        ),
+        offset=RayCasterCfg.OffsetCfg(
+            pos=(0.0, 0.0, 0.35),
+        ),
+        debug_vis=False,
+        max_distance=50.0,
+        mesh_prim_paths=list(RAYCAST_MESH_PRIM_PATHS),
+    )
+
+
+def _dog_imu_cfg(prim_path: str) -> ImuCfg:
+    return ImuCfg(
+        prim_path=prim_path,
+        update_period=0.01,
+        offset=ImuCfg.OffsetCfg(
+            pos=(0.0, 0.0, 0.0),
+            rot=(1.0, 0.0, 0.0, 0.0),
+        ),
+        gravity_bias=(0.0, 0.0, 9.81),
+    )
+
+
+def _move_toward(source_xy: tuple[float, float], target_xy: tuple[float, float], distance: float) -> tuple[float, float]:
+    dx = target_xy[0] - source_xy[0]
+    dy = target_xy[1] - source_xy[1]
+    norm = math.hypot(dx, dy)
+    if norm < 1.0e-6:
+        return source_xy
+    scale = distance / norm
+    return (source_xy[0] + dx * scale, source_xy[1] + dy * scale)
+
+
+def _cctv_cfg(name: str) -> CameraCfg:
+    spec = CCTV_CORNER_SPECS[name]
+    x, y = _move_toward(spec["corner"], spec["look_hint"], spec["mount_inset"])
+    yaw = math.atan2(spec["look_hint"][1] - y, spec["look_hint"][0] - x)
+    pitch = math.radians(CCTV_PITCH_DEG)
+    quat = (
+        math.cos(yaw * 0.5) * math.cos(pitch * 0.5),
+        -math.sin(yaw * 0.5) * math.sin(pitch * 0.5),
+        math.cos(yaw * 0.5) * math.sin(pitch * 0.5),
+        math.sin(yaw * 0.5) * math.cos(pitch * 0.5),
+    )
+    return CameraCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/{name}",
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=14.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.05, 1000.0),
+        ),
+        width=640,
+        height=480,
+        data_types=["rgb", "semantic_segmentation"],
+        colorize_semantic_segmentation=False,
+        update_period=0.1,
+        offset=CameraCfg.OffsetCfg(
+            pos=(x, y, CCTV_HEIGHT),
+            rot=quat,
+            convention="world",
+        ),
+    )
+
+
+def _cctv_marker(name: str) -> AssetBaseCfg:
+    spec = CCTV_CORNER_SPECS[name]
+    x, y = _move_toward(spec["corner"], spec["look_hint"], spec["mount_inset"])
+    return AssetBaseCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/{name}_marker",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.18, 0.18, 0.18),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.9, 0.1, 0.1),
+                emissive_color=(0.6, 0.0, 0.0),
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(x, y, CCTV_HEIGHT + 0.18)),
     )
 
 
@@ -132,8 +238,8 @@ class SlamSceneCfg(InteractiveSceneCfg):
 
     This is a programmatic conversion of ``slam_scene_with_actors.usda``:
     the static map comes from the referenced ``slam_scene.usda``, while the
-    actors and front cameras come from ``slam_scene_with_actors.usda``.
-    Lidar prims are intentionally omitted for now.
+    actors, front cameras, and perception-style RayCaster LiDARs are expressed
+    directly with the current Simulation naming.
     """
 
     num_envs: int = 1
@@ -163,10 +269,28 @@ class SlamSceneCfg(InteractiveSceneCfg):
 
     agent_1: ArticulationCfg = _go2_cfg("{ENV_REGEX_NS}/agent_1", AGENT_1_START_POS)
     agent_2: ArticulationCfg = _go2_cfg("{ENV_REGEX_NS}/agent_2", AGENT_2_START_POS)
-    intruder_1: ArticulationCfg = _h1_intruder_cfg("{ENV_REGEX_NS}/intruder_1", INTRUDER_START_POS)
+    intruder_1: ArticulationCfg = _humanoid_intruder_cfg("{ENV_REGEX_NS}/intruder_1", INTRUDER_START_POS)
 
     agent_1_front_camera = _front_camera_cfg("{ENV_REGEX_NS}/agent_1/base/front_camera")
     agent_2_front_camera = _front_camera_cfg("{ENV_REGEX_NS}/agent_2/base/front_camera")
+    agent_1_lidar = _perception_lidar_cfg("{ENV_REGEX_NS}/agent_1/base")
+    agent_2_lidar = _perception_lidar_cfg("{ENV_REGEX_NS}/agent_2/base")
+    agent_1_imu = _dog_imu_cfg("{ENV_REGEX_NS}/agent_1/base")
+    agent_2_imu = _dog_imu_cfg("{ENV_REGEX_NS}/agent_2/base")
+
+    cam_marker_nw = _cctv_marker("cam_nw")
+    cam_marker_ne = _cctv_marker("cam_ne")
+    cam_marker_e_upper = _cctv_marker("cam_e_upper")
+    cam_marker_e_lower = _cctv_marker("cam_e_lower")
+    cam_marker_se = _cctv_marker("cam_se")
+    cam_marker_sw = _cctv_marker("cam_sw")
+
+    cam_nw = _cctv_cfg("cam_nw")
+    cam_ne = _cctv_cfg("cam_ne")
+    cam_e_upper = _cctv_cfg("cam_e_upper")
+    cam_e_lower = _cctv_cfg("cam_e_lower")
+    cam_se = _cctv_cfg("cam_se")
+    cam_sw = _cctv_cfg("cam_sw")
 
     dome_light = AssetBaseCfg(
         prim_path="/World/Lights/Dome",

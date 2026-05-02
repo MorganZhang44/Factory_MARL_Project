@@ -17,7 +17,7 @@ This is a hard architectural rule.
 | Core Communication Layer | `core` | ROS2 subscribers, state API, orchestration |
 | Visualization | `core` | Runs with Core as the Core-owned dashboard frontend |
 | ROS2 tooling / bringup | `ros2` | Shared tooling and launch definitions only |
-| Perception | future `perception` | gRPC client/server boundary |
+| Perception | `perception` | HTTP adapter on port 8891; dog self-localization + intruder detection + sensor fusion |
 | Decision | future `decision` | gRPC client/server boundary |
 | Planning / NavDP | `navdp` | Planning service boundary; loads the NavDP point-goal model behind the adapter |
 | Locomotion | `locomotion` | Motion-command service boundary; loads the Go2 low-level actor behind the adapter |
@@ -29,6 +29,7 @@ observability surface, not an independent algorithm module.
 
 * Simulation must be launched from `isaaclab51`.
 * Core and Visualization must be launched from `core`.
+* Perception must be launched from `perception`.
 * NavDP must be launched from `navdp`.
 * Locomotion must be launched from `locomotion`.
 * A module must not be started from another module's environment.
@@ -38,6 +39,8 @@ observability surface, not an independent algorithm module.
   are reused by multiple modules.
 * Docker images should preserve the same ownership: one image per module
   environment.
+* `marl` remains excluded from the shared Docker path until its runtime is
+  intentionally containerized.
 
 ## Current Launch Split
 
@@ -51,6 +54,12 @@ Core plus Visualization:
 
 ```bash
 ./scripts/launch_core_dashboard.sh
+```
+
+Perception:
+
+```bash
+./scripts/launch_perception.sh
 ```
 
 NavDP:
@@ -70,6 +79,7 @@ Default ports:
 ```text
 Core state API:        http://localhost:8765
 Visualization frontend: http://localhost:8770
+Perception adapter:    http://localhost:8891
 NavDP adapter:         http://localhost:8889
 Locomotion adapter:    http://localhost:8890
 ```

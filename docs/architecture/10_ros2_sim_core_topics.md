@@ -123,6 +123,31 @@ Full topic examples:
 /factory/simulation/agent_2/camera/depth
 ```
 
+### Front Camera Semantic Segmentation
+
+```text
+/{robot_id}/camera/semantic_segmentation
+```
+
+Message type:
+
+```text
+sensor_msgs/Image
+```
+
+Encoding:
+
+```text
+32SC1
+```
+
+Full topic examples:
+
+```text
+/factory/simulation/agent_1/camera/semantic_segmentation
+/factory/simulation/agent_2/camera/semantic_segmentation
+```
+
 ---
 
 ### Front LiDAR
@@ -163,9 +188,70 @@ Full topic examples:
 /factory/simulation/agent_2/lidar/points
 ```
 
-The point cloud is published from the real Isaac Sim RTX LiDAR point-cloud
-annotator. The `/lidar/scan` topic is derived from the real RTX LiDAR flat scan
-so existing Core / Dashboard debug visualization can keep using LaserScan.
+The formal runtime LiDAR is the same Isaac Lab RayCaster profile used by
+Perception: 16 channels, `-45` to `45` degree vertical FOV, full 360 degree
+horizontal FOV, 1 degree horizontal resolution, `(0, 0, 0.35)` dog-base offset,
+50 m max distance, and `/World/LocalizationStaticMesh` as the ray-cast target.
+The `/lidar/points` topic is built from RayCaster hit points. The `/lidar/scan`
+topic is a 2D projection of the same RayCaster point set so existing Core /
+Dashboard debug visualization can keep using LaserScan.
+
+### Dog IMU
+
+```text
+/{robot_id}/imu
+```
+
+Message type:
+
+```text
+sensor_msgs/Imu
+```
+
+Full topic examples:
+
+```text
+/factory/simulation/agent_1/imu
+/factory/simulation/agent_2/imu
+```
+
+### CCTV Cameras
+
+Perception-aligned fixed CCTV camera IDs:
+
+```text
+cam_nw
+cam_ne
+cam_e_upper
+cam_e_lower
+cam_se
+cam_sw
+```
+
+RGB topic:
+
+```text
+/cctv/{camera_id}/image_raw
+```
+
+Semantic segmentation topic:
+
+```text
+/cctv/{camera_id}/semantic_segmentation
+```
+
+Message type:
+
+```text
+sensor_msgs/Image
+```
+
+Full topic examples:
+
+```text
+/factory/simulation/cctv/cam_nw/image_raw
+/factory/simulation/cctv/cam_nw/semantic_segmentation
+```
 
 ### Locomotion Observation
 
@@ -233,6 +319,25 @@ Payload:
 
 This topic is for debugging and rapid integration only. High-frequency sensor
 data should stay on typed ROS2 topics.
+
+Core subscribes to all formal robot sensor topics:
+
+* `/camera/image_raw`
+* `/camera/depth`
+* `/camera/semantic_segmentation`
+* `/imu`
+* `/lidar/scan`
+* `/lidar/points`
+* `/cctv/<camera_id>/image_raw`
+* `/cctv/<camera_id>/semantic_segmentation`
+
+The Core state mirror exposes a lightweight dashboard snapshot for RGB, depth
+statistics, semantic-label summaries, IMU samples, 2D LiDAR scan points,
+downsampled 3D LiDAR points, and CCTV RGB feeds. The control payload sent from
+Core to upper/lower modules may include the latest RGB image, depth image,
+semantic image, IMU, LaserScan, and PointCloud2 payloads. Modules that do not
+need a sensor should ignore the corresponding key rather than requiring a
+different topic contract.
 
 ---
 
@@ -333,6 +438,8 @@ The frontend is read-only and visualizes:
 * intruder world position
 * latest robot camera frames
 * latest robot LiDAR scans
+* latest robot 3D LiDAR point-cloud summary
+* latest robot depth image summary
 * topic freshness / stale status
 
 ### Data Access

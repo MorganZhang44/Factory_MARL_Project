@@ -1,0 +1,12 @@
+name: perception
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pytorch
+  - cpuonly
+  - opencv
+  - matplotlib
+  - scipy

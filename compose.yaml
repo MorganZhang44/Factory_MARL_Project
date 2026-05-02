@@ -1,4 +1,24 @@
 services:
+  perception:
+    build:
+      context: .
+      dockerfile: perception/Dockerfile
+    image: factory-marl/perception:dev
+    container_name: factory-perception
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      PERCEPTION_CONDA_ENV: perception
+      PYTHONUNBUFFERED: "1"
+    command:
+      - bash
+      - -lc
+      - ./scripts/launch_perception.sh
+    restart: unless-stopped
+
   core:
     build:
       context: .
@@ -22,6 +42,7 @@ services:
       - -lc
       - ./scripts/launch_core_dashboard.sh
     depends_on:
+      - perception
       - navdp
       - locomotion
     restart: unless-stopped
