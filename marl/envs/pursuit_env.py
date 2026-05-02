@@ -8,7 +8,7 @@ Mirrors the Isaac Lab warehouse scene (warehouse_scene_cfg.py):
   - 1 Humanoid suspect (start (5,0)) moving with random walk
 
 MARL interface (per step):
-  obs    : np.ndarray  (n_agents, 12)
+  obs    : np.ndarray  (n_agents, 21)  # 13 state + 8 LiDAR rays
   action : np.ndarray  (n_agents, 2)  ← subgoal [x, y] in world frame
   reward : np.ndarray  (n_agents,)    ← shared team reward
   terminated/truncated: bool
@@ -127,12 +127,19 @@ class PursuitEnv(gym.Env):
         self._step_count += 1
         dists_before = np.linalg.norm(self.agent_pos - self.target_pos, axis=1)
 
-        # Convert relative action → absolute subgoal, clamped to map bounds
+        # Convert relative action → absolute subgoal.
+        # Preserve direction but cap magnitude to max_offset so the subgoal
+        # stays close enough for frequent responsive re-planning.
+        max_offset = 3.0  # metres — tune as needed
         for i in range(self.n_agents):
-            offset = np.clip(actions[i], -5.0, 5.0)
-            sg_world = self.agent_pos[i] + offset
+            raw   = np.array(actions[i], dtype=np.float64)
+            mag   = float(np.linalg.norm(raw))
+            if mag > max_offset:
+                raw = (raw / mag) * max_offset
+            sg_world = self.agent_pos[i] + raw
             sg_world = np.clip(sg_world, -self.map_half + 0.3, self.map_half - 0.3)
             self._subgoals[i] = sg_world
+
 
         # 1. Move each agent via A* toward its subgoal
         for i in range(self.n_agents):
@@ -150,11 +157,24 @@ class PursuitEnv(gym.Env):
         rewards = self.reward_fn.compute(
             self.agent_pos, self.target_pos, self.capture_radius,
             dists_before=dists_before, dists_after=dists_after,
+            step_count=self._step_count, max_steps=self.max_steps,
         )
 
         # 4. Termination
         dists     = dists_after
-        captured  = bool(np.any(dists <= self.capture_radius))
+        captured  = False
+        if len(dists) >= 2:
+            d1, d2 = float(dists[0]), float(dists[1])
+            if d1 <= self.capture_radius and d2 <= self.capture_radius:
+                v1 = self.agent_pos[0] - self.target_pos
+                v2 = self.agent_pos[1] - self.target_pos
+                cos_theta = np.dot(v1, v2) / (d1 * d2 + 1e-8)
+                if cos_theta <= 0.0:  # Angle >= 90 degrees
+                    captured = True
+        else:
+            # Fallback for single agent
+            captured = bool(np.any(dists <= self.capture_radius))
+            
         terminated = captured
         truncated  = self._step_count >= self.max_steps
 
@@ -195,14 +215,37 @@ class PursuitEnv(gym.Env):
         vel    = unit * (step / self.dt)
         new_pos = pos + unit * step
 
-        # Collision safety: stay if new position is blocked
+        # Collision safety and Wall Sliding
         if self.obs_map.is_collision(float(new_pos[0]), float(new_pos[1])):
+            # Try sliding along X axis
+            slide_x = np.array([new_pos[0], pos[1]])
+            if not self.obs_map.is_collision(float(slide_x[0]), float(slide_x[1])):
+                return slide_x, np.array([vel[0], 0.0])
+            
+            # Try sliding along Y axis
+            slide_y = np.array([pos[0], new_pos[1]])
+            if not self.obs_map.is_collision(float(slide_y[0]), float(slide_y[1])):
+                return slide_y, np.array([0.0, vel[1]])
+            
+            # Fully blocked (corner pocketed)
             return pos.copy(), np.zeros(2)
 
         return new_pos, vel
 
     def _step_intruder(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Random walk with wall/obstacle reflection."""
+        """Random walk with wall/obstacle reflection.
+           Includes stationary states to close the Sim2Real gap."""
+        # 1. Cornered logic: if an agent is very close, intruder stops moving
+        dists = np.linalg.norm(self.agent_pos - self.target_pos, axis=1)
+        if np.any(dists < self.capture_radius):
+            # Intruder is cornered/pinned, gives up and stops
+            return self.target_pos.copy(), np.zeros(2)
+        
+        # 2. Occasional stationary state (20% chance to be stationary in open space)
+        if self.np_random.random() < 0.20:
+            return self.target_pos.copy(), np.zeros(2)
+
+        # 3. Normal random walk
         noise = self.np_random.normal(0, 0.3, 2)
         vel   = self.target_vel + noise
         spd   = float(np.linalg.norm(vel))
@@ -230,17 +273,27 @@ class PursuitEnv(gym.Env):
         # Normalize to [-1, +1]
         pos_scale = self.map_half
         vel_scale = max(self.agent_max_spd, self.intruder_spd)
+        # 8 evenly-spaced LiDAR angles (0°, 45°, 90°, ... 315°)
+        lidar_angles = [i * np.pi / 4 for i in range(8)]
+        lidar_max    = 8.0   # metres — matches room diagonal
+
         obs = np.zeros((self.n_agents, self.obs_dim), dtype=np.float32)
         for i in range(self.n_agents):
             j = 1 - i  # teammate
+            px, py = float(self.agent_pos[i][0]), float(self.agent_pos[i][1])
+            lidar = np.array([
+                self.obs_map.ray_cast(px, py, a, max_range=lidar_max)
+                for a in lidar_angles
+            ], dtype=np.float32)
             obs[i] = np.concatenate([
-                [float(i)],                          # agent_id (0 or 1) ← KEY for role differentiation
+                [float(i)],                          # agent_id (0 or 1)
                 self.agent_pos[i] / pos_scale,       # self_pos   (2)
                 self.agent_vel[i] / vel_scale,       # self_vel   (2)
                 self.agent_pos[j] / pos_scale,       # mate_pos   (2)
                 self.agent_vel[j] / vel_scale,       # mate_vel   (2)
                 self.target_pos   / pos_scale,       # target_pos (2)
                 self.target_vel   / vel_scale,       # target_vel (2)
+                lidar,                               # lidar_8    (8)
             ])
         return obs
 

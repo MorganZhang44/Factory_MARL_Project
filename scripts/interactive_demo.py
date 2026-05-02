@@ -355,11 +355,9 @@ def main():
 
         # ── Mouse → world (capped velocity) ──────────────────────────
         mx, my = pygame.mouse.get_pos()
-        target_mouse_x, target_mouse_y = cm.screen_to_world(mx, my)
         
-        # Clamp mouse to strictly the inner room's limits to avoid glitching outside walls
-        target_mouse_x = float(np.clip(target_mouse_x, -5.5, 6.4))
-        target_mouse_y = float(np.clip(target_mouse_y, -4.6, 3.4))
+        # Convert mouse screen position to world coordinates
+        target_mouse_x, target_mouse_y = cm.screen_to_world(mx, my)
 
         # Calculate exact vector towards the mouse from CURRENT intruder position
         desired_pos = np.array([target_mouse_x, target_mouse_y])
@@ -368,29 +366,39 @@ def main():
         raw_diff = desired_pos - current_pos
         dist_to_mouse = float(np.linalg.norm(raw_diff))
         
-        # Max speed limit for human intruder: increased to 4.0 m/s for nimbleness
-        INTRUDER_MAX_SPD = 4.0  
-        
-        if dist_to_mouse > 1e-4:
-            # How far *could* they move this frame?
-            max_step = INTRUDER_MAX_SPD * dt_real
-            actual_step = min(dist_to_mouse, max_step)
-            
-            # Apply movement
-            new_pos = current_pos + (raw_diff / dist_to_mouse) * actual_step
-            tvel = (new_pos - current_pos) / max(dt_real, 1e-4)
-        else:
-            tvel = np.zeros(2)
-            new_pos = current_pos
+        # Max speed limit for human intruder
+        INTRUDER_MAX_SPD = AGENT_SPD
+        TRAIN_SPD        = float(env_cfg.get("intruder_spd", 1.0))  # match training
 
-        # Clamp into free space (don't walk into obstacle)
-        if env.obs_map.is_collision(new_pos[0], new_pos[1]):
-            new_pos = current_pos
+        if dist_to_mouse > 1e-4:
+            # Mouse is moving — follow it at capped speed
+            max_step    = INTRUDER_MAX_SPD * dt_real
+            actual_step = min(dist_to_mouse, max_step)
+            new_pos     = current_pos + (raw_diff / dist_to_mouse) * actual_step
+            raw_vel     = (new_pos - current_pos) / max(dt_real, 1e-4)
+            # Normalise to TRAIN_SPD so the network always sees an in-distribution
+            # velocity magnitude (it was trained with intruder_spd = 1.0 m/s)
+            vel_mag = float(np.linalg.norm(raw_vel))
+            tvel    = (raw_vel / vel_mag * TRAIN_SPD) if vel_mag > 0.05 else env.target_vel
+            state["_last_tvel"] = tvel.copy()
+        else:
+            # Mouse stationary: Target velocity is exactly zero.
+            # (Note: This is pure visualization logic. Any symmetry breaking
+            # should happen in the MARL environment or policy, not here.)
             tvel = np.zeros(2)
+            new_pos = current_pos    # intruder doesn't actually move
+
+        # Clamp into free space
+        if env.obs_map.is_collision(float(new_pos[0]), float(new_pos[1])):
+            new_pos = current_pos
 
         env.target_pos = new_pos
         env.target_vel = tvel
         state["trail"].append((new_pos[0], new_pos[1]))
+
+
+
+
 
         # ── MARL policy ──────────────────────────────────────────────
         obs = env._get_obs()   # uses updated target_pos/vel
@@ -401,9 +409,12 @@ def main():
 
         # ── Move agents ───────────────────────────────────────────────
         for i in range(env.n_agents):
-            offset  = np.clip(act_np[i], -5.0, 5.0)
-            sg      = env.agent_pos[i] + offset
-            sg      = np.clip(sg, -MAP_HALF + 0.3, MAP_HALF - 0.3)
+            raw = np.array(act_np[i], dtype=np.float64)
+            mag = float(np.linalg.norm(raw))
+            if mag > 3.0:                       # cap at 3 m (same as training)
+                raw = (raw / mag) * 3.0
+            sg = env.agent_pos[i] + raw
+            sg = np.clip(sg, -MAP_HALF + 0.3, MAP_HALF - 0.3)
             env._subgoals[i] = sg
             path = astar(env.obs_map, tuple(env.agent_pos[i].tolist()), tuple(sg.tolist()))
             env._paths[i] = path
@@ -411,21 +422,31 @@ def main():
                 env.agent_pos[i], path, AGENT_SPD
             )
 
+
+
         state["step"] += 1
 
-        # ── Capture check ─────────────────────────────────────────────
+        # ── Capture check (strict dual-agent encirclement) ────────────
+        # Requires: both agents within CAP_RADIUS AND angle between them
+        # (relative to intruder) >= 90°  (cos_theta <= 0)
         dists = np.linalg.norm(env.agent_pos - env.target_pos, axis=1)
         state["dist_min"] = min(state["dist_min"], float(dists.min()))
-        if np.any(dists <= CAP_RADIUS):
-            state["caps"]      += 1
-            state["cap_flash"]  = FPS * 2   # flash for 2 seconds
+        d1, d2 = float(dists[0]), float(dists[1])
+        captured = False
+        if d1 <= CAP_RADIUS and d2 <= CAP_RADIUS:
+            v1 = env.agent_pos[0] - env.target_pos
+            v2 = env.agent_pos[1] - env.target_pos
+            if d1 > 0.05 and d2 > 0.05:
+                cos_theta = float(np.dot(v1, v2) / (d1 * d2))
+                if cos_theta <= 0.0:   # angle >= 90°
+                    captured = True
+
+        if captured:
+            caps_kept = state.get("caps", 0) + 1
             state = reset_episode()
-            state["caps"] = state.get("caps", 0)
-            # reset keeps cap count
-            caps_kept = state["caps"]
-            state = reset_episode()
-            state["caps"] = caps_kept + 1
+            state["caps"]      = caps_kept
             state["cap_flash"] = FPS * 2
+
 
         if state["cap_flash"] > 0:
             state["cap_flash"] -= 1
@@ -440,6 +461,17 @@ def main():
         for i, (path, col) in enumerate([(env._paths[0], PATH1_COL), (env._paths[1], PATH2_COL)]):
             if path:
                 draw_dashed_path(screen, path, col[:3], cm)
+
+        # Subgoals (small circles)
+        for i, col in enumerate([DOG1_COLOR, DOG2_COLOR]):
+            sg = env._subgoals[i]
+            if sg is not None:
+                cx, cy = cm.world_to_screen(*sg)
+                pygame.draw.circle(screen, col, (cx, cy), 6)
+                pygame.draw.circle(screen, (255, 255, 255), (cx, cy), 6, 2)
+                # Draw a thin line from agent to subgoal
+                ax, ay = cm.world_to_screen(*env.agent_pos[i])
+                pygame.draw.line(screen, col, (ax, ay), (cx, cy), 1)
 
         # Capture radius circle around each agent
         for i in range(env.n_agents):

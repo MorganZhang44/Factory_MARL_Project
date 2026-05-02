@@ -155,3 +155,27 @@ class ObstacleMap:
 
     def get_grid(self) -> np.ndarray:
         return self.grid.copy()
+
+    def ray_cast(
+        self,
+        ox: float, oy: float,
+        angle: float,
+        max_range: float = 10.0,
+        step: float = 0.2,
+    ) -> float:
+        """
+        Cast a single ray from (ox, oy) in the given angle (radians).
+        Returns the normalized distance [0, 1] to the nearest obstacle,
+        where 1.0 = max_range (clear) and 0.0 = obstacle right next to agent.
+        """
+        dx = np.cos(angle) * step
+        dy = np.sin(angle) * step
+        x, y = ox, oy
+        dist = 0.0
+        while dist < max_range:
+            x += dx
+            y += dy
+            dist += step
+            if self.is_collision(x, y):
+                return dist / max_range  # normalised
+        return 1.0  # no obstacle found → full range

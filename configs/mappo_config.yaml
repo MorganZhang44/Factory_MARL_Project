@@ -2,10 +2,10 @@ env:
   map_size: 20.0
   map_half: 10.0
   n_agents: 2
-  obs_dim: 13                # 12D state + 1D agent_id → asymmetric roles
+  obs_dim: 21                # 13 state + 8 LiDAR rays (0°,45°,90°,...,315°)
   max_steps: 500
   dt: 0.1
-  capture_radius: 1.0
+  capture_radius: 1.5
   agent_max_speed: 1.5
   intruder_speed: 1.0
   agent_radius: 0.3
@@ -28,9 +28,12 @@ mappo:
   save_interval: 100_000
 
 reward:
-  w_distance: 0.5
+  w_distance: 1.0           # Increased from 0.5 to encourage moving towards target
   w_capture: 200.0
   w_spread: 0.0
-  w_step: -0.02
-  w_proximity: -3.0         # penalty when agents < separation_threshold apart
-  separation_threshold: 2.5 # metres — agents must stay this far apart
+  w_step: -0.1
+  w_proximity: -0.5         # Reduced from -3.0 to make them less scared of each other
+  separation_threshold: 1.5 # Reduced from 2.5m to allow closer cooperation
+  w_encircle: 0.5           # Reduced from 1.5 so it's a nudge, not an absolute rule
+  w_pin: 2.0                # New pinning reward
+  w_time: 100.0             # New time bonus: faster capture = bigger reward
