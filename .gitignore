@@ -145,6 +145,8 @@ cython_debug/
 tmp/
 .DS_Store
 *.gif
+output/
+logs/
 core/workspace/build/
 core/workspace/install/
 core/workspace/log/

@@ -2,29 +2,25 @@
 
 这个仓库是一个基于 Isaac Sim / Isaac Lab 的模块化多智能体拦截系统。
 
-当前已经打通的主链路是：
+当前已经打通并实际联调过的主链路是：
+
+```text
+Simulation -> Core -> Perception / NavDP / MARL / Locomotion -> Dashboard
+```
+
+其中控制相关的主闭环可以理解成：
 
 ```text
 Simulation -> Core -> NavDP -> Locomotion -> Simulation
 ```
 
-可视化属于 Core，本身只读取 Core 的状态镜像，不直接进入控制闭环。
+`MARL` 现在已经作为正式服务接入 `Core`，默认使用 `v13` 资源做子目标规划；`Dashboard` 也会显示 MARL 的角色分配与输出。
 
-当前 `marl` 已经作为独立模块接入到 Core 的观测链路中：
-
-```text
-Simulation -> Core -> MARL (mirrored only) -> Dashboard
-```
-
-它现在会独立运行、独立可视化，但**默认还不接管正式控制闭环**。
-
-这个项目当前的组织原则是：
+项目当前的组织原则是：
 
 * 每个模块保持自己的运行边界
 * 日常开发优先使用本机环境
-* Docker 主要用于给队友分享稳定环境
-
-在当前阶段，本机开发仍然是主工作流。
+* Docker 主要用于整链复现和给队友分享稳定环境
 
 ---
 
@@ -35,7 +31,7 @@ Simulation -> Core -> MARL (mirrored only) -> Dashboard
 * `simulation/` - Isaac Sim / Isaac Lab 场景运行模块
 * `core/` - 总通信层与 dashboard
 * `perception/` - 感知模块（狗自定位 + 入侵者检测 + 传感器融合）
-* `marl/` - 多智能体决策模块（当前独立服务化，默认只做镜像与可视化）
+* `marl/` - 多智能体决策模块（当前默认接入 `v13` service runtime）
 * `navdp/` - 路径规划适配层与真实 NavDP 接入
 * `locomotion/` - 低层运动适配层与 policy
 * `ros2/` - ROS2 工具、launch 资产和工作区相关内容
@@ -73,12 +69,14 @@ Simulation -> Core -> MARL (mirrored only) -> Dashboard
 
 ## 本机快速启动
 
+默认推荐先用 `legacy` simulation 跑整链。当前这条线最稳定，也已经对齐了 Core、Docker 和 dashboard 的联调方式。
+
 ### 1. Simulation
 
 运行环境：`isaaclab51`
 
 ```bash
-./scripts/launch_simulation.sh --keep-open
+./scripts/launch_simulation.sh --runtime legacy --keep-open
 ```
 
 现在默认会使用：
@@ -91,6 +89,17 @@ Simulation -> Core -> MARL (mirrored only) -> Dashboard
 
 ```bash
 ./scripts/launch_simulation.sh --device cpu
+```
+
+`legacy` 当前有两个常用行为：
+
+* 默认 `intruder` 静止不动
+* 加 `--move-intruder` 后，`intruder` 会沿固定路线移动
+
+例如：
+
+```bash
+./scripts/launch_simulation.sh --runtime legacy --keep-open --move-intruder
 ```
 
 ### 2. Perception
@@ -139,6 +148,12 @@ planner=auto + device=cpu
 ./scripts/launch_marl.sh
 ```
 
+默认使用：
+
+```text
+marl/marl_pursuit_v13_final/release_v13_final/checkpoints/v13_final.pt
+```
+
 默认服务地址：
 
 ```text
@@ -174,7 +189,7 @@ http://localhost:8765
 ### 终端 1
 
 ```bash
-./scripts/launch_simulation.sh --keep-open
+./scripts/launch_simulation.sh --runtime legacy --keep-open
 ```
 
 ### 终端 2
@@ -217,24 +232,16 @@ http://localhost:8770
 
 ## Docker 用法
 
-这个仓库里的 Docker 主要用于给队友分享可复现环境。
-
-当前仍然建议你自己优先使用本机环境开发。
-
-### 当前已经准备的 Docker 范围
-
-目前仓库已经补了这些模块的 Docker 支持：
+这个仓库里的 Docker 目前已经可以跑一整条 **headless** 联调链：
 
 * `perception`
 * `core`
 * `navdp`
 * `locomotion`
+* `marl`
+* `simulation`（headless Isaac Sim）
 
-另外还提供了一个 Simulation 的 headless 初始容器脚手架：
-
-* `simulation/Dockerfile.headless`
-
-这个 Simulation Docker 目前应当视为“可继续完善的基线版本”，而不是最终稳定的 Isaac Sim 容器方案。
+当前仍然建议你自己优先使用本机环境开发；Docker 更适合整链回归测试和共享复现。
 
 ### Compose
 
@@ -246,17 +253,47 @@ compose.yaml
 
 目前的 Compose 设计为 Linux 下使用 host networking，方便保持当前 ROS2 通信方式简单直接。
 
-启动共享服务容器：
+启动非 simulation 的共享服务：
 
 ```bash
-docker compose up --build perception core navdp locomotion
+docker compose up --build perception core navdp locomotion marl
 ```
 
-或者直接：
+启动整条链（含 headless simulation）：
 
 ```bash
-docker compose up --build
+docker compose --profile simulation up --build perception core navdp locomotion marl simulation
 ```
+
+停止整条链：
+
+```bash
+docker compose down --remove-orphans
+docker compose --profile simulation down --remove-orphans
+```
+
+查看状态：
+
+```bash
+docker compose --profile simulation ps
+```
+
+查看关键日志：
+
+```bash
+docker compose --profile simulation logs -f core simulation marl
+```
+
+### Docker simulation 的限制
+
+当前 Docker 里的 simulation 走的是：
+
+```text
+simulation/Dockerfile.headless
+```
+
+所以它默认是 **headless** 的，不会直接弹出 Isaac Sim GUI 窗口。  
+如果需要 GUI 调试，当前更推荐本机直接运行 simulation。
 
 这会启动：
 

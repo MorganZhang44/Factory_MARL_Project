@@ -80,6 +80,18 @@ def Xform "World"
         )
         {
         }
+
+        over "Map"
+        {
+            over "Floor" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </World/PhysicsMaterials/LegacyFloor> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
     }
 
     def Xform "Actors"
@@ -788,6 +800,22 @@ def Xform "World"
                 bool physxRigidBody:enableGyroscopicForces = 1
                 float physxRigidBody:maxDepenetrationVelocity = 10
             }
+        }
+    }
+
+    def "PhysicsMaterials"
+    {
+        def Material "LegacyFloor" (
+            prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+        )
+        {
+            float physics:dynamicFriction = 1
+            float physics:restitution = 0
+            float physics:staticFriction = 1
+            float physxMaterial:compliantContactDamping = 0
+            float physxMaterial:compliantContactStiffness = 0
+            uniform token physxMaterial:frictionCombineMode = "multiply"
+            uniform token physxMaterial:restitutionCombineMode = "multiply"
         }
     }
 

@@ -45,6 +45,7 @@ services:
       - perception
       - navdp
       - locomotion
+      - marl
     restart: unless-stopped
 
   navdp:
@@ -89,6 +90,26 @@ services:
       - bash
       - -lc
       - ./scripts/launch_locomotion.sh
+    restart: unless-stopped
+
+  marl:
+    build:
+      context: .
+      dockerfile: marl/Dockerfile
+    image: factory-marl/marl:dev
+    container_name: factory-marl
+    network_mode: host
+    ipc: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      MARL_CONDA_ENV: marl
+      PYTHONUNBUFFERED: "1"
+    command:
+      - bash
+      - -lc
+      - ./scripts/launch_marl.sh
     restart: unless-stopped
 
   simulation:

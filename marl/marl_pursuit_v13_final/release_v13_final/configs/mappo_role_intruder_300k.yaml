@@ -1,0 +1,80 @@
+env:
+  map_size: 20.0
+  map_half: 10.0
+  n_agents: 2
+  obs_dim: 22
+  max_steps: 500
+  dt: 0.1
+  capture_radius: 1.5
+  agent_max_speed: 0.75            # halved from 1.5 (~ leg-speed pacing)
+  agent_max_offset: 3.0          # actor's action limit; matches what env actually uses
+  intruder_speed: 0.6              # halved from 1.2
+  intruder_max_offset: 2.0
+  agent_radius: 0.3
+  grid_resolution: 0.5
+  use_roles: true
+  role_cooldown_steps: 30
+  role_gap_threshold: 1.0
+  capture_hold_steps: 20             # 2 s of continuous capture geometry to confirm
+  intruder_near_obstacle_prob: 0.50
+  same_side_spawn_prob: 0.40          # v9: keep — exposes policy to demo failure case
+
+mappo:
+  lr_actor: 3.0e-4
+  lr_critic: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  n_epochs: 10
+  rollout_steps: 1024
+  mini_batch_size: 256
+  entropy_coeff: 0.005           # halved — was driving entropy up unboundedly
+  value_loss_coeff: 0.5
+  max_grad_norm: 0.5
+  total_timesteps: 600_000        # v12: from-scratch (yaw + 2s hold dynamics)
+  eval_interval: 10_000
+  save_interval: 100_000
+  use_intruder_policy: true
+  intruder_obs_dim: 20
+  intruder_lr_actor: 3.0e-4
+  intruder_lr_critic: 3.0e-4
+  intruder_hybrid_prob_start: 0.5
+  intruder_hybrid_prob_end: 0.1
+  intruder_hybrid_decay_frac: 0.5
+
+reward:
+  # ---- Pursuer ----
+  w_dist_pursuer: 1.5
+  w_pin_pursuer: 1.0             # halved (was 2.0); no more hover trap
+  w_lag_pursuer: -0.5
+  pin_threshold: 1.5             # aligned with capture_radius (was 2.0)
+  lag_threshold: 5.0
+  # ---- Encircler ----
+  w_angle_encircler: 4.0
+  w_cutoff_encircler: 0.0
+  w_dist_encircler: 1.2          # bumped 0.8 -> 1.2; closing matters more
+  w_commit_encircler: 5.0        # NEW: strong commit-to-capture bonus near capture range
+  commit_radius_mul: 1.5         # commit zone = capture_radius × 1.5 = 2.25 m
+  # ---- Team ----
+  w_capture: 400.0               # 2x — capture must dominate dense rewards
+  w_time: 200.0                  # 2x
+  w_proximity: -1.0
+  separation_threshold: 1.5
+  w_step: -0.12
+  time_escalation_rate: 0.001
+  w_copresence: 3.0
+  w_stuck: 0.0
+  stuck_threshold: 80              # v12: 2x because agent speed halved → trajectories ~2x longer
+  w_same_side: 0.0
+  same_side_thresh: 0.5
+  same_side_radius: 4.0
+  # ---- v12: NEW reward terms for yaw-limited dynamics + 2 s capture lock ----
+  w_face_pursuer:   0.8           # facing reward when within 5m (cos heading vs target_dir)
+  w_face_encircler: 0.5
+  face_reward_radius: 5.0
+  w_hold_step: 3.0                # bonus per step the capture geometry holds
+  # ---- Intruder ----
+  w_intruder_alive: 0.05
+  w_intruder_distance: 0.5
+  w_intruder_captured: -100.0
+  w_intruder_wall: -0.1

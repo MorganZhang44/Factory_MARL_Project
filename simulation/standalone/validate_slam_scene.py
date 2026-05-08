@@ -35,6 +35,11 @@ parser.add_argument("--steps", type=int, default=240, help="Number of simulation
 parser.add_argument("--dt", type=float, default=0.005, help="Simulation timestep.")
 parser.add_argument("--keep-open", action="store_true", help="Keep Isaac Sim open after setup for visual inspection.")
 parser.add_argument(
+    "--move-intruder",
+    action="store_true",
+    help="Move the intruder along its scripted route. Disabled by default for static-scene runs.",
+)
+parser.add_argument(
     "--view-camera",
     choices=["world", "agent_1", "agent_2"],
     default="world",
@@ -75,7 +80,7 @@ import carb
 import omni.timeline
 import omni.usd
 import torch
-from pxr import Gf, Sdf, UsdGeom
+from pxr import Gf, Sdf, UsdGeom, UsdPhysics
 
 try:
     import isaacsim.core.utils.prims as prim_utils
@@ -144,10 +149,9 @@ INTRUDER = {
 }
 INTRUDER_ROUTE_ANCHORS = (
     (2.0, -0.5, 1.34),
-    (3.8, -0.4, 1.34),
-    (3.2, 1.8, 1.34),
-    (0.5, 2.3, 1.34),
-    (-2.8, 2.0, 1.34),
+    (2.0, 2.3, 1.34),
+    (-1.0, 2.3, 1.34),
+    (-3.8, 2.3, 1.34),
     (-3.8, 0.1, 1.34),
     (-3.2, -2.6, 1.34),
     (0.2, -3.1, 1.34),
@@ -1019,6 +1023,59 @@ def _create_static_localization_mesh(mesh_path: str = LOCALIZATION_MESH_PATH) ->
     print(f"[INFO] Localization mesh: {mesh_path} ({len(points)} vertices, {len(face_vertex_counts)} triangles)")
 
 
+def _deactivate_referenced_physics_scene() -> None:
+    """Disable the PhysicsScene authored inside the referenced SLAM USDA."""
+    stage = omni.usd.get_context().get_stage()
+    physics_scene_prim = stage.GetPrimAtPath("/World/SlamScene/PhysicsScene")
+    if not physics_scene_prim.IsValid():
+        print("[INFO] No referenced PhysicsScene found under /World/SlamScene.")
+        return
+    if not physics_scene_prim.IsActive():
+        print("[INFO] Referenced PhysicsScene already inactive.")
+        return
+
+    physics_scene_prim.SetActive(False)
+    print("[INFO] Deactivated referenced PhysicsScene at /World/SlamScene/PhysicsScene")
+
+
+def _apply_floor_physics_material() -> None:
+    """Bind an explicit floor physics material closer to the locomotion training setup."""
+    stage = omni.usd.get_context().get_stage()
+    floor_prim = stage.GetPrimAtPath("/World/SlamScene/Map/Floor")
+    if not floor_prim.IsValid():
+        print("[WARN] Floor prim not found at /World/SlamScene/Map/Floor; skipping physics material bind.")
+        return
+
+    material_path = "/World/PhysicsMaterials/LegacyFloor"
+    material_cfg = sim_utils.RigidBodyMaterialCfg(
+        friction_combine_mode="multiply",
+        restitution_combine_mode="multiply",
+        static_friction=1.0,
+        dynamic_friction=1.0,
+        restitution=0.0,
+    )
+    material_cfg.func(material_path, material_cfg)
+    sim_utils.bind_physics_material("/World/SlamScene/Map/Floor", material_path, stage=stage)
+    print("[INFO] Bound explicit floor physics material at /World/SlamScene/Map/Floor")
+
+
+def _apply_robot_physics_material(dogs: dict[str, dict]) -> None:
+    """Bind a non-zero contact material to the Go2 rigid bodies, closer to training-time settings."""
+    stage = omni.usd.get_context().get_stage()
+    material_path = "/World/PhysicsMaterials/Go2Body"
+    material_cfg = sim_utils.RigidBodyMaterialCfg(
+        static_friction=0.8,
+        dynamic_friction=0.6,
+        restitution=0.0,
+    )
+    material_cfg.func(material_path, material_cfg)
+
+    for robot_id, spec in dogs.items():
+        prim_path = spec["prim_path"]
+        sim_utils.bind_physics_material(prim_path, material_path, stage=stage)
+        print(f"[INFO] Bound robot physics material for {robot_id} at {prim_path}")
+
+
 def _load_environment(scene_usd: Path) -> None:
     """Reference the pure scene under /World/SlamScene."""
     if not scene_usd.exists():
@@ -1395,6 +1452,21 @@ def _lock_intruder_joint_pose(intruder: Articulation) -> None:
     intruder.set_joint_position_target(joint_pos)
 
 
+def _lock_intruder_root_pose(intruder: Articulation) -> None:
+    """Pin the intruder root to its configured spawn pose with zero base velocity."""
+    root_state = intruder.data.root_state_w.clone()
+    root_state[:, 0] = float(INTRUDER["pos"][0])
+    root_state[:, 1] = float(INTRUDER["pos"][1])
+    root_state[:, 2] = float(INTRUDER["pos"][2])
+    yaw = math.radians(float(INTRUDER["yaw_deg"]))
+    root_state[:, 3] = math.cos(0.5 * yaw)
+    root_state[:, 4] = 0.0
+    root_state[:, 5] = 0.0
+    root_state[:, 6] = math.sin(0.5 * yaw)
+    root_state[:, 7:13] = 0.0
+    intruder.write_root_state_to_sim(root_state)
+
+
 def _apply_motion_commands(
     dogs: dict[str, Articulation],
     commands: dict[str, list[float]],
@@ -1459,8 +1531,11 @@ def main() -> None:
     sim.set_camera_view(eye=[6.0, -7.0, 5.0], target=[0.0, -0.5, 0.5])
 
     _load_environment(args_cli.scene_usd)
+    _deactivate_referenced_physics_scene()
+    _apply_floor_physics_material()
     _create_static_localization_mesh()
     dogs, intruder = _spawn_actors()
+    _apply_robot_physics_material(DOGS)
     sensor_paths, lidar_paths = _attach_sensors(DOGS)
     cctv_paths = _attach_cctv_sensors()
     camera_readers = _create_camera_readers(DOGS)
@@ -1533,9 +1608,11 @@ def main() -> None:
             if dog_id in low_level_applied:
                 dog.write_data_to_sim()
                 continue
-            dog.set_joint_position_target(dog.data.default_joint_pos)
             dog.write_data_to_sim()
-        _move_intruder_along_route(intruder, step_idx, args_cli.dt)
+        if args_cli.move_intruder:
+            _move_intruder_along_route(intruder, step_idx, args_cli.dt)
+        else:
+            _lock_intruder_root_pose(intruder)
         _lock_intruder_joint_pose(intruder)
         intruder.write_data_to_sim()
 
@@ -1599,9 +1676,11 @@ def main() -> None:
                 if dog_id in low_level_applied:
                     dog.write_data_to_sim()
                     continue
-                dog.set_joint_position_target(dog.data.default_joint_pos)
                 dog.write_data_to_sim()
-            _move_intruder_along_route(intruder, keep_open_step, args_cli.dt)
+            if args_cli.move_intruder:
+                _move_intruder_along_route(intruder, keep_open_step, args_cli.dt)
+            else:
+                _lock_intruder_root_pose(intruder)
             _lock_intruder_joint_pose(intruder)
             intruder.write_data_to_sim()
             sim.step()

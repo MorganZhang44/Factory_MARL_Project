@@ -631,6 +631,7 @@ function drawMarlMap(canvas, data, focusRobotId = null) {
   const proj = makeProjector(canvas, bounds);
   const marl = data.marl || {};
   const subgoals = marl.subgoals || {};
+  const roles = marl.roles || {};
   const intruderEntry = Object.entries(data.intruders || {})[0];
   const intruderId = intruderEntry ? intruderEntry[0] : "intruder";
   const intruderPose = intruderEntry && intruderEntry[1] ? intruderEntry[1].pose : null;
@@ -661,6 +662,25 @@ function drawMarlMap(canvas, data, focusRobotId = null) {
     if (intruderPos) {
       drawArrowLine(ctx, gx, gy, proj.x(intruderPos[0]), proj.y(intruderPos[1]), "#cb4a3f", false);
     }
+  }
+
+  for (const [robotId, robot] of Object.entries(data.robots || {})) {
+    const pose = robot.pose || {};
+    const robotPos = Array.isArray(pose.position) ? pose.position : null;
+    if (!robotPos) continue;
+    const roleInfo = roles[robotId] || {};
+    const roleName = roleInfo.role_name || "-";
+    const roleShort = roleName === "pursuer" ? "P" : (roleName === "encircler" ? "E" : "?");
+    const rx = proj.x(robotPos[0]);
+    const ry = proj.y(robotPos[1]);
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fillRect(rx - 10, ry + 12, 78, 18);
+    ctx.strokeStyle = "#d8e0ec";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rx - 10, ry + 12, 78, 18);
+    ctx.fillStyle = "#233044";
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.fillText(`${robotId}:${roleShort}`, rx - 4, ry + 25);
   }
 
   const legendX = 16;
@@ -1346,6 +1366,7 @@ function renderMarlPage(data) {
   marlGrid.innerHTML = "";
   const marl = data.marl || {};
   const subgoals = marl.subgoals || {};
+  const roles = marl.roles || {};
   const input = marl.input || {};
 
   const statusCard = document.createElement("div");
@@ -1365,6 +1386,19 @@ function renderMarlPage(data) {
       <div class="metric"><div class="label">Load Error</div><div class="value mono">${marl.load_error || "-"}</div></div>
     </div>`;
   marlGrid.appendChild(statusCard);
+
+  const roleCard = document.createElement("div");
+  roleCard.className = "module-card";
+  const roleEntries = Object.entries(roles);
+  roleCard.innerHTML = `
+    <div class="panel-title"><span>Role Assignment</span><span>${dot(roleEntries.length ? "ok" : "waiting")}</span></div>
+    <div class="chip-row">
+      ${roleEntries.length
+        ? roleEntries.map(([robotId, role]) => `<span class="chip">${robotId} ${(role && role.role_name) || "-"} (${(role && role.role) ?? "-"})</span>`).join("")
+        : `<span class="chip">awaiting marl roles</span>`}
+    </div>
+    <div class="small-note">Roles are mirrored directly from the MARL service. 0 = pursuer, 1 = encircler.</div>`;
+  marlGrid.appendChild(roleCard);
 
   const mapCard = document.createElement("div");
   mapCard.className = "module-card";
@@ -1392,6 +1426,7 @@ function renderMarlPage(data) {
       <div class="panel-title"><span>${robotId}</span><span>${dot(subgoal.subgoal ? "ok" : "waiting")}</span></div>
       <div class="chip-row">
         <span class="chip">mode ${subgoal.mode || "-"}</span>
+        <span class="chip">role ${(subgoal.role_name || (roles[robotId] || {}).role_name || "-")}</span>
         <span class="chip">priority ${subgoal.priority || "-"}</span>
         <span class="chip">pose ${fmtVec(pose.position)}</span>
       </div>
@@ -1411,6 +1446,8 @@ function renderMarlPage(data) {
             <div class="metric-list">
               <div class="metric"><div class="label">Subgoal</div><div class="value mono">${fmtVec(subgoal.subgoal)}</div></div>
               <div class="metric"><div class="label">Offset</div><div class="value mono">${fmtVec(subgoal.offset)}</div></div>
+              <div class="metric"><div class="label">Role</div><div class="value">${subgoal.role_name || (roles[robotId] || {}).role_name || "-"}</div></div>
+              <div class="metric"><div class="label">Role Flag</div><div class="value mono">${subgoal.role ?? ((roles[robotId] || {}).role ?? "-")}</div></div>
               <div class="metric"><div class="label">Action Mode</div><div class="value">${subgoal.mode || "-"}</div></div>
               <div class="metric"><div class="label">Priority</div><div class="value">${subgoal.priority || "-"}</div></div>
             </div>

@@ -5,23 +5,24 @@ ROS2 publishing.
 
 It must run only in the `isaaclab51` environment.
 
-Primary local entry point:
+## Primary entry point
 
 ```bash
-./scripts/launch_simulation.sh
+./scripts/launch_simulation.sh --runtime legacy --keep-open
 ```
 
-The launcher now supports two runtimes:
+The launcher supports three runtimes:
 
 ```bash
 ./scripts/launch_simulation.sh --runtime legacy
 ./scripts/launch_simulation.sh --runtime rewrite
+./scripts/launch_simulation.sh --runtime rebuild
 ```
 
 Or with an environment variable:
 
 ```bash
-SIMULATION_RUNTIME=rewrite ./scripts/launch_simulation.sh
+SIMULATION_RUNTIME=legacy ./scripts/launch_simulation.sh
 ```
 
 The launcher uses `conda run --no-capture-output` with `PYTHONUNBUFFERED=1`, so
@@ -31,12 +32,15 @@ Runtime mapping:
 
 * `legacy`: launches `simulation/standalone/validate_slam_scene.py`
 * `rewrite`: launches `simulation/standalone/run_environment_rewrite.py`
+* `rebuild`: launches `simulation/standalone/run_environment_rebuild.py`
+
+Current recommendation:
+
+* use `legacy` for end-to-end stack tests
+* treat `rewrite` and `rebuild` as parallel lines
 
 By default the standalone Isaac Sim entry point publishes the current
 Simulation-Core ROS2 contract under `/factory/simulation`.
-
-Because both runtimes publish the same current-project topic contract, the rest
-of the stack does not need to change when switching between them.
 
 Current ROS2-facing package:
 
@@ -72,6 +76,45 @@ Current status:
   `cam_nw`, `cam_ne`, `cam_e_upper`, `cam_e_lower`, `cam_se`, `cam_sw`
 * the dashboard currently visualizes the LaserScan projection of the RayCaster
   point set
+
+## Legacy runtime notes
+
+`legacy` is the current baseline runtime for full-stack testing.
+
+Useful flags:
+
+```bash
+./scripts/launch_simulation.sh --runtime legacy --keep-open
+./scripts/launch_simulation.sh --runtime legacy --keep-open --move-intruder
+```
+
+Behavior:
+
+* by default the `intruder` is held fixed in place
+* with `--move-intruder`, it follows the fixed route used by the current
+  project setup
+
+Current default actor spawn positions:
+
+* `agent_1 = (-2.0, -2.0, 0.42)`
+* `agent_2 = (-2.0, 1.6, 0.42)`
+* `intruder = (2.0, -0.5, 1.34)`
+
+## Docker
+
+The repository also includes a headless Isaac Sim container path:
+
+```text
+simulation/Dockerfile.headless
+```
+
+In `compose.yaml`, the `simulation` service currently runs with:
+
+* `simulation/Dockerfile.headless`
+* `--headless`
+
+So the Docker simulation path is currently for headless stack testing, not GUI
+visual debugging.
 
 The current package includes `mock_sim_publisher` so the Core layer can be
 tested before Isaac Sim publishes real sensor data.

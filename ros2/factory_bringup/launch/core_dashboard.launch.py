@@ -26,6 +26,7 @@ def generate_launch_description():
     perception_period = LaunchConfiguration("perception_period")
     perception_record_dir = LaunchConfiguration("perception_record_dir")
     marl_period = LaunchConfiguration("marl_period")
+    use_perception_output = LaunchConfiguration("use_perception_output")
     use_marl_output = LaunchConfiguration("use_marl_output")
     simulation_dt = LaunchConfiguration("simulation_dt")
     visualization_host = LaunchConfiguration("visualization_host")
@@ -42,7 +43,7 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_control_loop", default_value="true"),
             DeclareLaunchArgument("control_topic_prefix", default_value="/factory/control"),
             DeclareLaunchArgument("control_period", default_value="0.02"),
-            DeclareLaunchArgument("planning_period", default_value="0.5"),
+            DeclareLaunchArgument("planning_period", default_value="0.1"),
             DeclareLaunchArgument("path_stale_after", default_value="2.0"),
             DeclareLaunchArgument("navdp_timeout", default_value="10.0"),
             DeclareLaunchArgument("locomotion_timeout", default_value="0.08"),
@@ -55,6 +56,7 @@ def generate_launch_description():
             DeclareLaunchArgument("perception_period", default_value="0.04"),
             DeclareLaunchArgument("perception_record_dir", default_value=""),
             DeclareLaunchArgument("marl_period", default_value="0.1"),
+            DeclareLaunchArgument("use_perception_output", default_value="true"),
             DeclareLaunchArgument("use_marl_output", default_value="true"),
             DeclareLaunchArgument("simulation_dt", default_value="0.005"),
             DeclareLaunchArgument("visualization_host", default_value="0.0.0.0"),
@@ -88,6 +90,7 @@ def generate_launch_description():
                         "perception_period": perception_period,
                         "perception_record_dir": perception_record_dir,
                         "marl_period": marl_period,
+                        "use_perception_output": use_perception_output,
                         "use_marl_output": use_marl_output,
                         "simulation_dt": simulation_dt,
                     }

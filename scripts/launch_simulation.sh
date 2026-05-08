@@ -48,7 +48,7 @@ while [[ "${IDX}" -lt "${#ARGS[@]}" ]]; do
   if [[ "${arg}" == "--runtime" ]]; then
     IDX=$((IDX + 1))
     if [[ "${IDX}" -ge "${#ARGS[@]}" ]]; then
-      echo "Missing value for --runtime. Use 'legacy' or 'rewrite'." >&2
+      echo "Missing value for --runtime. Use 'legacy', 'rewrite', or 'rebuild'." >&2
       exit 1
     fi
     RUNTIME="${ARGS[${IDX}]}"
@@ -69,8 +69,10 @@ done
 
 if [[ "${RUNTIME}" == "rewrite" ]]; then
   ENTRYPOINT="simulation/standalone/run_environment_rewrite.py"
+elif [[ "${RUNTIME}" == "rebuild" ]]; then
+  ENTRYPOINT="simulation/standalone/run_environment_rebuild.py"
 elif [[ "${RUNTIME}" != "legacy" ]]; then
-  echo "Unsupported simulation runtime '${RUNTIME}'. Use 'legacy' or 'rewrite'." >&2
+  echo "Unsupported simulation runtime '${RUNTIME}'. Use 'legacy', 'rewrite', or 'rebuild'." >&2
   exit 1
 fi
 

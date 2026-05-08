@@ -107,7 +107,7 @@ class CoreControlNode(Node):
         self.declare_parameter("enable_control_loop", True)
         self.declare_parameter("control_topic_prefix", "/factory/control")
         self.declare_parameter("control_period", 0.02)
-        self.declare_parameter("planning_period", 0.5)
+        self.declare_parameter("planning_period", 0.1)
         self.declare_parameter("path_stale_after", 2.0)
         self.declare_parameter("navdp_timeout", 10.0)
         self.declare_parameter("locomotion_timeout", 0.08)
@@ -1145,8 +1145,19 @@ class CoreControlNode(Node):
         distance = math.hypot(x, y)
         if distance < 1.0e-6:
             return [0.0, 0.0, 0.0]
-        speed = min(0.8, distance)
-        return [round(x / distance * speed, 4), round(y / distance * speed, 4), 0.0]
+        heading_error = math.atan2(y, x)
+        wz = max(-1.0, min(1.0, 2.2 * heading_error))
+        speed = min(0.8, max(0.7, distance))
+        heading_abs = abs(heading_error)
+        if heading_abs <= 0.35:
+            heading_scale = 1.0
+        elif heading_abs <= 0.8:
+            heading_scale = max(0.8, math.cos(heading_error))
+        else:
+            heading_scale = max(0.35, math.cos(heading_error))
+        vx = speed * heading_scale
+        vy = max(-0.3, min(0.3, speed * (y / distance)))
+        return [round(vx, 4), round(vy, 4), round(wz, 4)]
 
     def _world_point_to_body_velocity(
         self,
@@ -1160,8 +1171,19 @@ class CoreControlNode(Node):
         distance = math.hypot(dx, dy)
         if distance < 1.0e-6:
             return [0.0, 0.0, 0.0]
-        speed = min(0.8, distance)
-        return [round(dx / distance * speed, 4), round(dy / distance * speed, 4), 0.0]
+        heading_error = math.atan2(dy, dx)
+        wz = max(-1.0, min(1.0, 2.2 * heading_error))
+        speed = min(0.8, max(0.7, distance))
+        heading_abs = abs(heading_error)
+        if heading_abs <= 0.35:
+            heading_scale = 1.0
+        elif heading_abs <= 0.8:
+            heading_scale = max(0.8, math.cos(heading_error))
+        else:
+            heading_scale = max(0.35, math.cos(heading_error))
+        vx = speed * heading_scale
+        vy = max(-0.3, min(0.3, speed * (dy / distance)))
+        return [round(vx, 4), round(vy, 4), round(wz, 4)]
 
     def _world_point_to_body_xy(
         self,
