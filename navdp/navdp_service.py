@@ -22,8 +22,19 @@ import numpy as np
 
 
 MODULE_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = MODULE_ROOT.parent
 DEFAULT_CHECKPOINT = MODULE_ROOT / "checkpoints" / "navdp-cross-modal.ckpt"
 VENDOR_DIR = MODULE_ROOT / "vendor" / "navdp_baseline"
+ASTAR_RELEASE_ROOT = PROJECT_ROOT / "marl" / "marl_pursuit_v13_final" / "release_v13_final"
+if str(ASTAR_RELEASE_ROOT) not in sys.path:
+    sys.path.insert(0, str(ASTAR_RELEASE_ROOT))
+from marl.utils.astar import astar as astar_plan
+from marl.utils.map_utils import ObstacleMap
+
+
+DEFAULT_ASTAR_MAP_HALF = 10.0
+DEFAULT_ASTAR_RESOLUTION = 0.5
+DEFAULT_ASTAR_AGENT_RADIUS = 0.3
 
 
 def _as_xy(value: Any, field_name: str) -> tuple[float, float]:
@@ -53,6 +64,19 @@ def _straight_line_waypoints(
     ]
 
 
+def _path_span(waypoints: list[list[float]] | list[tuple[float, float]]) -> float:
+    if not isinstance(waypoints, list) or len(waypoints) < 2:
+        return 0.0
+    first = waypoints[0]
+    last = waypoints[-1]
+    try:
+        dx = float(last[0]) - float(first[0])
+        dy = float(last[1]) - float(first[1])
+    except (TypeError, ValueError, IndexError):
+        return 0.0
+    return math.hypot(dx, dy)
+
+
 class NavDPRequestHandler(BaseHTTPRequestHandler):
     max_step = 0.5
     planner_mode = "auto"
@@ -60,6 +84,7 @@ class NavDPRequestHandler(BaseHTTPRequestHandler):
     device = "cuda:0"
     stop_threshold = -0.5
     _real_planner: "RealNavDPPlanner | None" = None
+    _astar_map: ObstacleMap | None = None
 
     def do_GET(self) -> None:
         if self.path == "/health":
@@ -84,18 +109,44 @@ class NavDPRequestHandler(BaseHTTPRequestHandler):
 
         planner = "straight_line_v1"
         try:
-            if self.planner_mode != "straight":
+            if self.planner_mode == "astar":
+                planner = "navdp_astar_fallback_v1"
+                waypoints = self._astar_waypoints(start, goal)
+            elif self.planner_mode != "straight":
                 planner = self._real_navdp_plan(payload, start, goal)
                 waypoints = planner["waypoints"]
                 planner = planner["planner"]
+                if _path_span(waypoints) < 0.2:
+                    print("[navdp] real planner returned a near-static path, falling back to A*")
+                    waypoints = self._astar_waypoints(start, goal)
+                    planner = "navdp_astar_fallback_v1"
             else:
                 waypoints = _straight_line_waypoints(start, goal, self.max_step)
         except Exception as exc:
-            if self.planner_mode == "real":
-                self._send_json({"error": f"real NavDP failed: {exc}"}, status=500)
+            if self.planner_mode == "straight":
+                self._send_json({"error": f"straight planner failed unexpectedly: {exc}"}, status=500)
                 return
-            print(f"[navdp] real planner unavailable, falling back to straight line: {exc}")
-            waypoints = _straight_line_waypoints(start, goal, self.max_step)
+            try:
+                print(f"[navdp] planner failed, falling back to A*: {exc}")
+                waypoints = self._astar_waypoints(start, goal)
+                planner = "navdp_astar_fallback_v1"
+            except Exception as astar_exc:
+                print(f"[navdp] A* fallback failed, falling back to straight line: {astar_exc}")
+                waypoints = _straight_line_waypoints(start, goal, self.max_step)
+                planner = "straight_line_v1"
+
+        first_waypoint = waypoints[0] if isinstance(waypoints, list) and waypoints else None
+        last_waypoint = waypoints[-1] if isinstance(waypoints, list) and waypoints else None
+        print(
+            "[navdp-waypoints] "
+            f"robot={robot_id} planner={planner} "
+            f"count={len(waypoints) if isinstance(waypoints, list) else 0} "
+            f"start={[round(start[0], 4), round(start[1], 4)]} "
+            f"goal={[round(goal[0], 4), round(goal[1], 4)]} "
+            f"first={first_waypoint} "
+            f"last={last_waypoint} "
+            f"waypoints={waypoints}"
+        )
 
         self._send_json(
             {
@@ -105,6 +156,20 @@ class NavDPRequestHandler(BaseHTTPRequestHandler):
                 "planner": planner,
             }
         )
+
+    def _astar_waypoints(
+        self,
+        start: tuple[float, float],
+        goal: tuple[float, float],
+    ) -> list[list[float]]:
+        if self._astar_map is None:
+            self.__class__._astar_map = ObstacleMap(
+                map_half=DEFAULT_ASTAR_MAP_HALF,
+                resolution=DEFAULT_ASTAR_RESOLUTION,
+                agent_radius=DEFAULT_ASTAR_AGENT_RADIUS,
+            )
+        path = astar_plan(self._astar_map, start, goal)
+        return [[round(float(x), 4), round(float(y), 4)] for x, y in path]
 
     def _real_navdp_plan(
         self,
@@ -184,7 +249,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8889)
     parser.add_argument("--max-step", type=float, default=0.5)
-    parser.add_argument("--planner", choices=["auto", "real", "straight"], default="auto")
+    parser.add_argument("--planner", choices=["auto", "real", "astar", "straight"], default="auto")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--stop-threshold", type=float, default=-0.5)

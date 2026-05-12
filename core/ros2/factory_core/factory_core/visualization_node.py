@@ -1375,9 +1375,12 @@ function renderMarlPage(data) {
     <div class="panel-title"><span>MARL Runtime</span><span>${dot(normStatus(marl))}</span></div>
     <div class="chip-row">
       <span class="chip">mode ${marl.policy_mode || "-"}</span>
+      <span class="chip">decision ${marl.decision_mode || marl.policy_mode || "-"}</span>
       <span class="chip">freq ${fmtHz(marl.hz)}</span>
       <span class="chip">age ${fmtNum(marl.age_sec)} s</span>
       <span class="chip">obs ${marl.obs_dim || 13}D</span>
+      <span class="chip">fallback ${marl.fallback_active ? "on" : "off"}</span>
+      <span class="chip">close frames ${marl.close_frames ?? "-"}</span>
     </div>
     <div class="metric-list">
       <div class="metric"><div class="label">Action Semantics</div><div class="value mono">${marl.action_semantics || "-"}</div></div>
@@ -1429,6 +1432,7 @@ function renderMarlPage(data) {
         <span class="chip">role ${(subgoal.role_name || (roles[robotId] || {}).role_name || "-")}</span>
         <span class="chip">priority ${subgoal.priority || "-"}</span>
         <span class="chip">pose ${fmtVec(pose.position)}</span>
+        <span class="chip">lock ${subgoal.lock_only ? "yes" : "no"}</span>
       </div>
       <div class="split">
         <div class="stack">
@@ -1450,6 +1454,8 @@ function renderMarlPage(data) {
               <div class="metric"><div class="label">Role Flag</div><div class="value mono">${subgoal.role ?? ((roles[robotId] || {}).role ?? "-")}</div></div>
               <div class="metric"><div class="label">Action Mode</div><div class="value">${subgoal.mode || "-"}</div></div>
               <div class="metric"><div class="label">Priority</div><div class="value">${subgoal.priority || "-"}</div></div>
+              <div class="metric"><div class="label">Lock Only</div><div class="value">${subgoal.lock_only ? "yes" : "no"}</div></div>
+              <div class="metric"><div class="label">Look At</div><div class="value mono">${fmtVec(subgoal.look_at)}</div></div>
             </div>
           </div>
         </div>
@@ -1463,7 +1469,9 @@ function renderMarlPage(data) {
             input_vel ${fmtVec(robotInput.velocity)}<br />
             intruder ${fmtVec((input.intruder || {}).position)}<br />
             output_subgoal ${fmtVec(subgoal.subgoal)}<br />
-            output_offset ${fmtVec(subgoal.offset)}
+            output_offset ${fmtVec(subgoal.offset)}<br />
+            lock_only ${subgoal.lock_only ? "yes" : "no"}<br />
+            look_at ${fmtVec(subgoal.look_at)}
           </div>
         </div>
       </div>`;
@@ -1495,6 +1503,9 @@ function renderLocomotionPage(data) {
         <span class="chip">freq ${fmtHz(locomotion.hz)}</span>
         <span class="chip">age ${fmtNum(locomotion.age_sec)} s</span>
         <span class="chip">action scale ${fmtNum(actionScale, 3)}</span>
+        <span class="chip">core fallback ${locomotion.core_fallback_active ? "on" : "off"}</span>
+        <span class="chip">close-range ${locomotion.close_range_fallback ? "on" : "off"}</span>
+        <span class="chip">hold-heading ${locomotion.hold_heading_only ? "on" : "off"}</span>
       </div>
       <div class="split">
         <div class="stack">
@@ -1503,6 +1514,9 @@ function renderLocomotionPage(data) {
             <div class="metric"><div class="label">World Velocity</div><div class="value mono">${fmtVec(locomotion.velocity)}</div></div>
             <div class="metric"><div class="label">Target</div><div class="value mono">${fmtVec(locomotion.target)}</div></div>
             <div class="metric"><div class="label">max |action|</div><div class="value">${fmtNum(maxAbs, 3)}</div></div>
+            <div class="metric"><div class="label">Core Fallback</div><div class="value">${locomotion.core_fallback_active ? "yes" : "no"}</div></div>
+            <div class="metric"><div class="label">Close-Range Fallback</div><div class="value">${locomotion.close_range_fallback ? "yes" : "no"}</div></div>
+            <div class="metric"><div class="label">Hold-Heading Only</div><div class="value">${locomotion.hold_heading_only ? "yes" : "no"}</div></div>
           </div>
           <div>
             <div class="subheading">Commanded Pose</div>

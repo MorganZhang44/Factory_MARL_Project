@@ -1,0 +1,9 @@
+# MARL pursuit-and-encircle — minimal runtime requirements
+# Tested with Python 3.11 on Windows + CUDA 12.
+
+torch>=2.0
+numpy>=1.24
+gymnasium>=0.29
+pyyaml>=6.0
+matplotlib>=3.7      # only used by env.render() — optional for inference
+pygame>=2.5          # only used by scripts/interactive_demo.py

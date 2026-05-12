@@ -62,6 +62,12 @@ parser.add_argument(
     help="Where to save the recorded monitor-wall video.",
 )
 parser.add_argument(
+    "--topdown-video-output",
+    type=Path,
+    default=PROJECT_ROOT / "output" / "simulation_legacy_topdown.avi",
+    help="Where to save the recorded top-down video when --record-video is enabled.",
+)
+parser.add_argument(
     "--sensor-view",
     choices=["agent_1", "agent_2"],
     help="Shortcut for live inspection: switch to a dog camera and show its RayCaster LiDAR point cloud.",
@@ -159,7 +165,7 @@ INTRUDER_ROUTE_ANCHORS = (
     (2.0, -0.5, 1.34),
 )
 INTRUDER_ROUTE_STEP_SIZE = 0.05
-INTRUDER_SPEED_MPS = 0.4
+INTRUDER_SPEED_MPS = 0.6
 
 CCTV_PITCH_DEG = 25.0
 CCTV_HEIGHT = 2.35
@@ -178,6 +184,12 @@ DOG_CAMERA_FOCAL_LENGTH = 3.5
 DOG_CAMERA_HORIZONTAL_APERTURE = 12.0
 CCTV_CAMERA_FOCAL_LENGTH = 14.0
 CCTV_CAMERA_HORIZONTAL_APERTURE = 20.955
+TOPDOWN_CAMERA_ID = "topdown"
+TOPDOWN_CAMERA_PATH = "/World/Recording/topdown_camera"
+TOPDOWN_CAMERA_POSITION = (-0.85, -0.65, 11.5)
+TOPDOWN_CAMERA_TARGET = (-0.85, -0.65, 0.0)
+TOPDOWN_CAMERA_HORIZONTAL_APERTURE = 24.0
+TOPDOWN_CAMERA_FOCAL_LENGTH = 12.0
 
 PERCEPTION_LIDAR_MOUNT_POS = (0.0, 0.0, 0.35)
 PERCEPTION_LIDAR_MAX_DISTANCE = 50.0
@@ -847,6 +859,21 @@ def _create_cctv_camera(camera_path: str, camera_id: str) -> None:
     _set_xform(camera_path, position, quat_wxyz=usd_quat)
 
 
+def _create_topdown_camera(camera_path: str) -> None:
+    stage = omni.usd.get_context().get_stage()
+    camera = UsdGeom.Camera.Define(stage, Sdf.Path(camera_path))
+    camera.CreateFocalLengthAttr(TOPDOWN_CAMERA_FOCAL_LENGTH)
+    camera.CreateFocusDistanceAttr(400.0)
+    camera.CreateHorizontalApertureAttr(TOPDOWN_CAMERA_HORIZONTAL_APERTURE)
+    camera.CreateClippingRangeAttr(Gf.Vec2f(0.05, 1000.0))
+    # Use a near-vertical look so the recording reads as a true bird's-eye view
+    # while staying numerically stable with the existing look-at helper.
+    target = (TOPDOWN_CAMERA_TARGET[0], TOPDOWN_CAMERA_TARGET[1] + 1.0e-3, TOPDOWN_CAMERA_TARGET[2])
+    world_quat = _look_at_with_fixed_pitch_quat(TOPDOWN_CAMERA_POSITION, target, 89.5)
+    usd_quat = _normalize_quat(_quat_multiply(world_quat, DOG_CAMERA_USD_ROT_WXYZ))
+    _set_xform(camera_path, TOPDOWN_CAMERA_POSITION, quat_wxyz=usd_quat)
+
+
 def _set_active_viewport_camera(camera_path: str) -> None:
     """Switch the main viewport to a USD camera."""
     try:
@@ -1128,6 +1155,13 @@ def _attach_cctv_sensors() -> list[str]:
     return camera_paths
 
 
+def _attach_recording_sensors() -> list[str]:
+    prim_utils.create_prim("/World/Recording", "Xform")
+    _create_topdown_camera(TOPDOWN_CAMERA_PATH)
+    print(f"[INFO] Recording camera {TOPDOWN_CAMERA_ID}: {TOPDOWN_CAMERA_PATH}")
+    return [TOPDOWN_CAMERA_PATH]
+
+
 def _create_camera_readers(dog_specs: dict[str, dict]) -> dict[str, Camera]:
     """Create Isaac Lab camera readers for the dog front cameras."""
     cameras: dict[str, Camera] = {}
@@ -1163,6 +1197,20 @@ def _create_cctv_readers() -> dict[str, Camera]:
         cameras[camera_id] = Camera(cfg)
         print(f"[INFO] CCTV RGB camera reader: {camera_path}")
     return cameras
+
+
+def _create_recording_readers() -> dict[str, Camera]:
+    cfg = CameraCfg(
+        prim_path=TOPDOWN_CAMERA_PATH,
+        spawn=None,
+        width=960,
+        height=960,
+        data_types=["rgb"],
+        update_period=0.0,
+    )
+    camera = Camera(cfg)
+    print(f"[INFO] Recording RGB camera reader: {TOPDOWN_CAMERA_PATH}")
+    return {TOPDOWN_CAMERA_ID: camera}
 
 
 def _camera_rgb_frame(camera: Camera | None) -> np.ndarray | None:
@@ -1256,6 +1304,40 @@ class SimulationVideoRecorder:
             self._writer.release()
             self._writer = None
             print(f"[INFO] Simulation video saved to {self.output_path}")
+
+
+class SingleCameraVideoRecorder:
+    def __init__(self, output_path: Path, fps: float, camera_id: str) -> None:
+        if cv2 is None:
+            raise RuntimeError("cv2 is unavailable; cannot record simulation video.")
+        self.output_path = output_path
+        self.fps = float(max(fps, 1.0))
+        self.camera_id = camera_id
+        self._writer = None
+
+    def maybe_write(self, camera: Camera | None) -> None:
+        frame = _camera_rgb_frame(camera)
+        if frame is None:
+            return
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.putText(bgr, self.camera_id.upper(), (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+        if self._writer is None:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            self._writer = cv2.VideoWriter(
+                str(self.output_path),
+                fourcc,
+                self.fps,
+                (bgr.shape[1], bgr.shape[0]),
+            )
+            print(f"[INFO] Started recording {self.camera_id} video to {self.output_path}")
+        self._writer.write(bgr)
+
+    def close(self) -> None:
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+            print(f"[INFO] {self.camera_id} video saved to {self.output_path}")
 
 
 def _update_camera_readers(camera_readers: dict[str, Camera], dt: float) -> None:
@@ -1538,16 +1620,24 @@ def main() -> None:
     _apply_robot_physics_material(DOGS)
     sensor_paths, lidar_paths = _attach_sensors(DOGS)
     cctv_paths = _attach_cctv_sensors()
+    recording_camera_paths = _attach_recording_sensors()
     camera_readers = _create_camera_readers(DOGS)
     cctv_readers = _create_cctv_readers()
+    recording_readers = _create_recording_readers()
     lidar_readers = _create_lidar_readers(lidar_paths, show_visualization=args_cli.show_lidar)
     recorder = None
+    topdown_recorder = None
     if args_cli.record_video:
         feed_order = [*DOGS.keys(), *CCTV_CAMERA_NAMES]
         recorder = SimulationVideoRecorder(
             output_path=args_cli.video_output,
             fps=args_cli.video_fps,
             feed_order=feed_order,
+        )
+        topdown_recorder = SingleCameraVideoRecorder(
+            output_path=args_cli.topdown_video_output,
+            fps=args_cli.video_fps,
+            camera_id=TOPDOWN_CAMERA_ID,
         )
 
     expected_prims = [
@@ -1558,12 +1648,14 @@ def main() -> None:
         *[spec["prim_path"] for spec in DOGS.values()],
         *sensor_paths,
         *cctv_paths,
+        *recording_camera_paths,
     ]
     _validate_prims(expected_prims)
 
     sim.reset()
     _reset_sensor_readers(camera_readers, {})
     _reset_sensor_readers(cctv_readers, {})
+    _reset_sensor_readers(recording_readers, {})
     _initialize_actor_states(dogs, intruder)
     sim.step()
     for dog in dogs.values():
@@ -1623,11 +1715,14 @@ def main() -> None:
         intruder.update(args_cli.dt)
         _update_camera_readers(camera_readers, args_cli.dt)
         _update_camera_readers(cctv_readers, args_cli.dt)
+        _update_camera_readers(recording_readers, args_cli.dt)
         _update_lidar_readers(lidar_readers, args_cli.dt)
         if recorder is not None:
             current_sim_time = (step_idx + 1) * args_cli.dt
             while current_sim_time + 1.0e-9 >= next_capture_sim_time:
                 recorder.maybe_write(camera_readers, cctv_readers)
+                if topdown_recorder is not None:
+                    topdown_recorder.maybe_write(recording_readers.get(TOPDOWN_CAMERA_ID))
                 next_capture_sim_time += capture_interval_sim
         if ros2_bridge is not None and step_idx % max(1, args_cli.publish_every) == 0:
             ros2_bridge.publish(dogs, intruder, camera_readers, cctv_readers, lidar_readers, step_idx)
@@ -1656,6 +1751,8 @@ def main() -> None:
 
     if recorder is not None:
         recorder.close()
+    if topdown_recorder is not None:
+        topdown_recorder.close()
 
     if args_cli.keep_open:
         print("[INFO] Keeping Isaac Sim open. Close the Isaac Sim window to stop.")
@@ -1689,6 +1786,7 @@ def main() -> None:
             intruder.update(args_cli.dt)
             _update_camera_readers(camera_readers, args_cli.dt)
             _update_camera_readers(cctv_readers, args_cli.dt)
+            _update_camera_readers(recording_readers, args_cli.dt)
             _update_lidar_readers(lidar_readers, args_cli.dt)
             if ros2_bridge is not None and keep_open_step % max(1, args_cli.publish_every) == 0:
                 ros2_bridge.publish(dogs, intruder, camera_readers, cctv_readers, lidar_readers, keep_open_step)

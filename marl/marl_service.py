@@ -54,6 +54,14 @@ DEFAULT_AGENT_RADIUS = 0.3
 DEFAULT_LIDAR_RANGE = 8.0
 DEFAULT_LIDAR_RAYS = 8
 DEFAULT_TRACE_DIR = PROJECT_ROOT / "output" / "marl_traces"
+DEFAULT_CAPTURE_RADIUS = 1.5
+DEFAULT_FACE_CAPTURE_THRESH = 0.5
+DEFAULT_AGENT_MAX_OMEGA = 0.6
+SG_COMMIT_FRAMES = 10
+SG_REACHED_THRESH = 0.5
+SG_TARGET_DRIFT = 1.5
+SG_FALLBACK_CAP = 6.0
+SG_POLICY_CAP = 3.0
 
 
 def _clip_offset_norm(offset: np.ndarray, limit: float) -> np.ndarray:
@@ -91,6 +99,7 @@ class MarlPolicyRunner:
         trace_dir: Path | None = None,
         deterministic: bool = True,
         fallback_enabled: bool = True,
+        fallback_only: bool = False,
     ) -> None:
         self.checkpoint = checkpoint
         self.map_half = float(map_half)
@@ -105,6 +114,7 @@ class MarlPolicyRunner:
         self.trace_dir = trace_dir
         self.deterministic = bool(deterministic)
         self.fallback_enabled = bool(fallback_enabled)
+        self.fallback_only = bool(fallback_only)
         self.obs_dim = 14 + self.lidar_rays
         self.action_dim = 2
         self.robot_ids = list(DEFAULT_ROBOT_IDS)
@@ -121,6 +131,14 @@ class MarlPolicyRunner:
         )
         self._roles: np.ndarray | None = None
         self._steps_since_switch = 0
+        self._close_frames = 0
+        self._capture_radius = DEFAULT_CAPTURE_RADIUS
+        self._face_capture_thresh = DEFAULT_FACE_CAPTURE_THRESH
+        self._agent_max_omega = DEFAULT_AGENT_MAX_OMEGA
+        self._committed_sg: list[np.ndarray | None] = [None] * len(self.robot_ids)
+        self._sg_age: list[int] = [0] * len(self.robot_ids)
+        self._sg_committed_target: list[np.ndarray | None] = [None] * len(self.robot_ids)
+        self._was_locked: list[bool] = [False] * len(self.robot_ids)
         self._trace_lock = threading.Lock()
         self._trace_seq = 0
         self._spawn_snapshot_written = False
@@ -130,6 +148,8 @@ class MarlPolicyRunner:
 
     @property
     def mode(self) -> str:
+        if self.fallback_only:
+            return "fallback_only"
         return "checkpoint" if self._actor is not None else "fallback"
 
     @property
@@ -146,6 +166,10 @@ class MarlPolicyRunner:
             "lidar_range": self.lidar_range,
             "trace_dir": str(self.trace_dir) if self.trace_dir is not None else None,
             "action_semantics": "world_frame_relative_offset_xy",
+            "capture_radius": self._capture_radius,
+            "face_capture_thresh": self._face_capture_thresh,
+            "agent_max_omega": self._agent_max_omega,
+            "fallback_only": self.fallback_only,
         }
 
     def _write_trace(self, record: dict[str, Any]) -> None:
@@ -174,6 +198,11 @@ class MarlPolicyRunner:
         self._spawn_snapshot_written = True
 
     def _load_policy(self) -> None:
+        if self.fallback_only:
+            self._actor = None
+            self._load_error = None
+            return
+
         checkpoint_path = self.checkpoint
         if not checkpoint_path.exists() and checkpoint_path == DEFAULT_CHECKPOINT and LEGACY_CHECKPOINT.exists():
             checkpoint_path = LEGACY_CHECKPOINT
@@ -250,6 +279,205 @@ class MarlPolicyRunner:
             dtype=np.float32,
         )
 
+    @staticmethod
+    def _angle_wrap(value: float) -> float:
+        return (float(value) + math.pi) % (2.0 * math.pi) - math.pi
+
+    @staticmethod
+    def _robot_yaw(robot: dict[str, Any]) -> float:
+        yaw = robot.get("yaw", 0.0)
+        return float(yaw) if isinstance(yaw, int | float) else 0.0
+
+    def _find_reachable_near(self, ideal_pos: np.ndarray, target_pos: np.ndarray) -> np.ndarray:
+        if not self._obs_map.is_collision(float(ideal_pos[0]), float(ideal_pos[1])):
+            return ideal_pos
+        base_v = ideal_pos - target_pos
+        base_dist = float(np.linalg.norm(base_v))
+        if base_dist < 0.1:
+            return ideal_pos
+        base_angle = float(np.arctan2(base_v[1], base_v[0]))
+        for d_factor in (1.0, 0.85, 0.7, 0.55):
+            for d_deg in (5, -5, 10, -10, 20, -20, 30, -30, 45, -45, 60, -60, 80, -80):
+                ang = base_angle + np.radians(d_deg)
+                r = base_dist * d_factor
+                cand = target_pos + r * np.array([np.cos(ang), np.sin(ang)], dtype=np.float32)
+                if not self._obs_map.is_collision(float(cand[0]), float(cand[1])):
+                    return cand.astype(np.float32, copy=False)
+        return ideal_pos
+
+    def _compute_closing_actions(
+        self,
+        agent_pos: np.ndarray,
+        target_pos: np.ndarray,
+        capture_radius: float,
+        agent_yaw: np.ndarray | None = None,
+        face_thresh: float = 0.5,
+    ) -> tuple[np.ndarray, list[bool]]:
+        target_dist = capture_radius * 0.7
+        align_radius = 0.45
+        cap_safe = capture_radius - 0.1
+        overshoot = target_dist - 0.3
+        face_lock_th = max(0.7, face_thresh)
+
+        d = np.linalg.norm(agent_pos - target_pos[None, :], axis=1)
+        pursuer_idx = int(np.argmin(d))
+        encircler_idx = 1 - pursuer_idx
+        actions = np.zeros((2, 2), dtype=np.float64)
+        lock_flags = [False, False]
+
+        v_p = agent_pos[pursuer_idx] - target_pos
+        n_p = float(np.linalg.norm(v_p))
+        v_e = agent_pos[encircler_idx] - target_pos
+        n_e = float(np.linalg.norm(v_e))
+        if n_p > 0.05 and n_e > 0.05:
+            cos_pe = float(np.dot(v_p, v_e) / (n_p * n_e))
+        else:
+            cos_pe = 1.0
+        encircled = cos_pe <= 0.0
+
+        if n_p > 0.1:
+            ideal_p = target_pos + (v_p / n_p) * target_dist
+        else:
+            ideal_p = agent_pos[pursuer_idx].copy()
+        ideal_p = self._find_reachable_near(ideal_p.astype(np.float32, copy=False), target_pos)
+
+        encircler_on_detour = False
+        if n_p > 0.1:
+            u_p = v_p / n_p
+            if cos_pe <= -0.5:
+                ideal_e = target_pos - u_p * target_dist
+            elif cos_pe <= 0.3:
+                ideal_e = target_pos - u_p * 2.0
+                encircler_on_detour = True
+            else:
+                if n_e > 0.05:
+                    cross = float(v_p[0] * v_e[1] - v_p[1] * v_e[0])
+                    sign = 1.0 if abs(cross) < 0.05 or cross >= 0.0 else -1.0
+                else:
+                    sign = 1.0
+                perp = np.array([-u_p[1], u_p[0]], dtype=np.float32) * sign
+                ideal_e = target_pos + perp * (capture_radius + 0.3)
+                encircler_on_detour = True
+        else:
+            ideal_e = target_pos + np.array([target_dist, 0.0], dtype=np.float32)
+        ideal_e = self._find_reachable_near(ideal_e.astype(np.float32, copy=False), target_pos)
+
+        ideals = {pursuer_idx: ideal_p, encircler_idx: ideal_e}
+        lockable = {pursuer_idx: True, encircler_idx: not encircler_on_detour}
+
+        cf = [1.0, 1.0]
+        if agent_yaw is not None:
+            for i in range(2):
+                to_t = target_pos - agent_pos[i]
+                nt = float(np.linalg.norm(to_t))
+                if nt > 1.0e-3:
+                    head = np.array([np.cos(float(agent_yaw[i])), np.sin(float(agent_yaw[i]))], dtype=np.float32)
+                    cf[i] = float(np.dot(head, to_t / nt))
+
+        for i in range(2):
+            gap_to_slot = float(np.linalg.norm(agent_pos[i] - ideals[i]))
+            d_to_target = float(d[i])
+            slot_close = gap_to_slot <= align_radius
+            in_safe_zone = d_to_target <= cap_safe
+            too_close = d_to_target <= overshoot
+            lock_now = (
+                (slot_close and in_safe_zone and lockable[i])
+                or (in_safe_zone and encircled)
+                or (too_close and encircled)
+            )
+            if lock_now:
+                lock_flags[i] = True
+                actions[i] = np.zeros(2, dtype=np.float64)
+            else:
+                actions[i] = (ideals[i] - agent_pos[i]).astype(np.float64, copy=False)
+
+        for i in range(2):
+            mag = float(np.linalg.norm(actions[i]))
+            if mag > SG_POLICY_CAP:
+                actions[i] = actions[i] / mag * SG_POLICY_CAP
+        return actions.astype(np.float32, copy=False), lock_flags
+
+    def _fallback_should_activate(self, agent_positions: np.ndarray, target_pos: np.ndarray) -> bool:
+        d_to_target = np.linalg.norm(agent_positions - target_pos[None, :], axis=1)
+        max_d = float(d_to_target.max())
+        if max_d <= 6.0:
+            self._close_frames += 1
+        else:
+            self._close_frames = 0
+        cf = self._close_frames
+        return bool(
+            (max_d <= 2.0 and cf >= 1)
+            or (max_d <= 3.0 and cf >= 5)
+            or (max_d <= 4.0 and cf >= 10)
+            or (max_d <= 6.0 and cf >= 20)
+        )
+
+    def _build_final_subgoals(
+        self,
+        robots: dict[str, Any],
+        target_pos: np.ndarray,
+        raw_actions: np.ndarray,
+        fallback_active: bool,
+        lock_flags: list[bool],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        subgoals: dict[str, Any] = {}
+        debug: dict[str, Any] = {
+            "fallback_active": bool(fallback_active),
+            "close_frames": int(self._close_frames),
+            "lock_flags": list(lock_flags),
+            "sg_age": list(self._sg_age),
+            "sg_commit_frames": SG_COMMIT_FRAMES,
+        }
+        for i, robot_id in enumerate(self.robot_ids):
+            robot_pos = np.asarray(_as_xy(robots[robot_id]["position"], f"robots.{robot_id}.position"), dtype=np.float32)
+            if lock_flags[i]:
+                self._committed_sg[i] = None
+                self._sg_age[i] = 0
+                self._sg_committed_target[i] = None
+                self._was_locked[i] = True
+                offset = np.zeros(2, dtype=np.float32)
+                subgoal_world = robot_pos.copy()
+                look_at = [round(float(target_pos[0]), 4), round(float(target_pos[1]), 4)]
+            else:
+                sg_cap = SG_FALLBACK_CAP if fallback_active else SG_POLICY_CAP
+                raw = np.array(raw_actions[i], dtype=np.float64)
+                mag = float(np.linalg.norm(raw))
+                if mag > sg_cap:
+                    raw = (raw / mag) * sg_cap
+                candidate_sg = _clip_world(robot_pos + raw.astype(np.float32, copy=False), self.map_half)
+                committed = self._committed_sg[i]
+                should_recommit = False
+                if committed is None:
+                    should_recommit = True
+                elif self._was_locked[i]:
+                    should_recommit = True
+                elif self._sg_age[i] >= SG_COMMIT_FRAMES:
+                    should_recommit = True
+                elif float(np.linalg.norm(robot_pos - committed)) <= SG_REACHED_THRESH:
+                    should_recommit = True
+                else:
+                    committed_target = self._sg_committed_target[i]
+                    if committed_target is None or float(np.linalg.norm(target_pos - committed_target)) > SG_TARGET_DRIFT:
+                        should_recommit = True
+                if should_recommit:
+                    self._committed_sg[i] = candidate_sg.copy()
+                    self._sg_age[i] = 0
+                    self._sg_committed_target[i] = target_pos.copy()
+                    self._was_locked[i] = False
+                else:
+                    self._sg_age[i] += 1
+                subgoal_world = self._committed_sg[i].copy() if self._committed_sg[i] is not None else candidate_sg.copy()
+                offset = (subgoal_world - robot_pos).astype(np.float32, copy=False)
+                look_at = None
+            subgoals[robot_id] = {
+                "subgoal": [round(float(subgoal_world[0]), 4), round(float(subgoal_world[1]), 4)],
+                "offset": [round(float(offset[0]), 4), round(float(offset[1]), 4)],
+                "lock_only": bool(lock_flags[i]),
+                "look_at": look_at,
+            }
+        debug["sg_age"] = list(self._sg_age)
+        return subgoals, debug
+
     def _build_observation(self, robots: dict[str, Any], intruder: dict[str, Any]) -> np.ndarray:
         target_pos = np.asarray(_as_xy(intruder["position"], "intruder.position"), dtype=np.float32)
         target_vel = np.asarray(_as_xy(intruder["velocity"], "intruder.velocity"), dtype=np.float32)
@@ -305,31 +533,63 @@ class MarlPolicyRunner:
         obs = self._build_observation(robots, intruder)
         roles = self._roles.copy() if isinstance(self._roles, np.ndarray) else np.zeros(len(self.robot_ids), dtype=np.int64)
         obs_norm = self._normalize_obs(obs)
-        if self._actor is None:
+        target_pos = np.asarray(_as_xy(intruder["position"], "intruder.position"), dtype=np.float32)
+        agent_positions = np.stack(
+            [
+                np.asarray(_as_xy(robots[robot_id]["position"], f"robots.{robot_id}.position"), dtype=np.float32)
+                for robot_id in self.robot_ids
+            ],
+            axis=0,
+        )
+        agent_yaws = np.asarray([self._robot_yaw(robots[robot_id]) for robot_id in self.robot_ids], dtype=np.float32)
+        if self.fallback_only:
+            policy_action_offsets = self._fallback_offsets(robots, intruder)
+        elif self._actor is None:
             if not self.fallback_enabled:
                 raise RuntimeError(self._load_error or "MARL checkpoint is unavailable")
-            action_offsets = self._fallback_offsets(robots, intruder)
+            policy_action_offsets = self._fallback_offsets(robots, intruder)
         else:
             import torch
 
             with torch.no_grad():
                 obs_tensor = torch.as_tensor(obs_norm, dtype=torch.float32)
                 actions, _ = self._actor.get_action(obs_tensor, deterministic=self.deterministic)
-            action_offsets = actions.cpu().numpy().astype(np.float32, copy=False)
+            policy_action_offsets = actions.cpu().numpy().astype(np.float32, copy=False)
 
-        subgoals: dict[str, Any] = {}
+        chosen_action_offsets = np.asarray(policy_action_offsets, dtype=np.float32, copy=True)
+        fallback_active = (
+            not self.fallback_only
+            and self._actor is not None
+            and self.fallback_enabled
+            and self._fallback_should_activate(agent_positions, target_pos)
+        )
+        lock_flags = [False, False]
+        if fallback_active:
+            chosen_action_offsets, lock_flags = self._compute_closing_actions(
+                agent_positions,
+                target_pos,
+                self._capture_radius,
+                agent_yaw=agent_yaws,
+                face_thresh=self._face_capture_thresh,
+            )
+
+        subgoals, debug = self._build_final_subgoals(
+            robots,
+            target_pos,
+            chosen_action_offsets,
+            fallback_active=fallback_active,
+            lock_flags=lock_flags,
+        )
+
         for i, robot_id in enumerate(self.robot_ids):
-            robot_pos = np.asarray(_as_xy(robots[robot_id]["position"], f"robots.{robot_id}.position"), dtype=np.float32)
-            offset = _clip_offset_norm(action_offsets[i], self.action_limit)
-            subgoal_world = _clip_world(robot_pos + offset, self.map_half)
-            subgoals[robot_id] = {
-                "subgoal": [round(float(subgoal_world[0]), 4), round(float(subgoal_world[1]), 4)],
-                "offset": [round(float(offset[0]), 4), round(float(offset[1]), 4)],
-                "role": int(roles[i]),
-                "role_name": "pursuer" if int(roles[i]) == PURSUER else "encircler",
-                "mode": "intercept",
-                "priority": 1,
-            }
+            subgoals[robot_id].update(
+                {
+                    "role": int(roles[i]),
+                    "role_name": "pursuer" if int(roles[i]) == PURSUER else "encircler",
+                    "mode": "closing_fallback" if fallback_active else "intercept",
+                    "priority": 1,
+                }
+            )
 
         result = {
             "roles": {
@@ -341,6 +601,8 @@ class MarlPolicyRunner:
             },
             "subgoals": subgoals,
             "policy_mode": self.mode,
+            "decision_mode": "closing_fallback" if fallback_active else self.mode,
+            **debug,
             "action_semantics": "world_frame_relative_offset_xy",
         }
         self._write_trace(
@@ -354,14 +616,16 @@ class MarlPolicyRunner:
                 "roles": result["roles"],
                 "obs": np.round(obs, 6).tolist(),
                 "obs_norm": np.round(obs_norm, 6).tolist(),
-                "action_offsets": np.round(action_offsets, 6).tolist(),
+                "policy_action_offsets": np.round(policy_action_offsets, 6).tolist(),
+                "chosen_action_offsets": np.round(chosen_action_offsets, 6).tolist(),
                 "result": result,
             }
         )
         role_summary = ", ".join(f"{rid}:{info['role_name']}" for rid, info in result["roles"].items())
         print(
             "[marl-trace] "
-            f"mode={self.mode} "
+            f"mode={result['decision_mode']} "
+            f"close_frames={self._close_frames} "
             f"roles={{{role_summary}}}"
         )
         return result
@@ -433,6 +697,7 @@ def main() -> None:
     parser.add_argument("--trace-dir", type=Path, default=DEFAULT_TRACE_DIR)
     parser.add_argument("--deterministic", action="store_true", default=False)
     parser.add_argument("--no-fallback", action="store_true", help="fail if checkpoint cannot be loaded")
+    parser.add_argument("--fallback-only", action="store_true", help="skip policy inference and use fallback logic only")
     args = parser.parse_args()
 
     MarlRequestHandler.runner = MarlPolicyRunner(
@@ -449,6 +714,7 @@ def main() -> None:
         trace_dir=args.trace_dir,
         deterministic=args.deterministic,
         fallback_enabled=not args.no_fallback,
+        fallback_only=args.fallback_only,
     )
     server = ThreadingHTTPServer((args.host, args.port), MarlRequestHandler)
     status = MarlRequestHandler.runner.status

@@ -3,15 +3,17 @@ channels:
   - conda-forge
   - robostack-staging
 dependencies:
-  - python=3.10
+  - python=3.11
   - numpy
   - fastapi
   - uvicorn
   - pillow
   - pyyaml
   - ros-humble-ros-base
+  - ros-humble-rosidl-generator-dds-idl
   - ros-humble-sensor-msgs
   - ros-humble-geometry-msgs
+  - ros-humble-nav-msgs
   - ros-humble-std-msgs
   - colcon-common-extensions
   - setuptools

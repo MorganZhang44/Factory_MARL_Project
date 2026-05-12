@@ -422,11 +422,18 @@ class CoreControlNode(Node):
             if robot_state is None:
                 robot_state = {"position": actual_robot_xy, "velocity": [0.0, 0.0]}
             sensor_payload = self._sensor_payload(robot_id)
+            marl_entry = self._marl_subgoal_entry(marl_result, robot_id) if self.use_marl_output else None
             marl_subgoal = self._marl_subgoal_xy(marl_result, robot_id) if self.use_marl_output else None
+            intruder_distance = math.hypot(
+                float(actual_robot_xy[0]) - float(intruder_xy[0]),
+                float(actual_robot_xy[1]) - float(intruder_xy[1]),
+            )
+            close_range_fallback = intruder_distance <= 2.0
+            hold_heading_only = intruder_distance <= 0.5
             subgoal = {
                 "robot_id": robot_id,
-                "subgoal": marl_subgoal if marl_subgoal is not None else intruder_xy,
-                "mode": "marl" if marl_subgoal is not None else "chase",
+                "subgoal": intruder_xy if close_range_fallback else (marl_subgoal if marl_subgoal is not None else intruder_xy),
+                "mode": "closing_fallback" if close_range_fallback else ("marl" if marl_subgoal is not None else "chase"),
                 "priority": 1,
             }
             robot_yaw = self._pose_yaw(entity.pose)
@@ -441,12 +448,26 @@ class CoreControlNode(Node):
                 current_sim_time,
             )
             path = self._latest_path(robot_id, current_sim_time)
-            if path is None:
-                continue
+            navdp_heading_only_fallback = path is None or self._path_endpoint_span_below(path, 0.2)
+            core_fallback_active = close_range_fallback or navdp_heading_only_fallback
+            if core_fallback_active:
+                path = {
+                    "planner": "closing_approach_fallback",
+                    "source_module": "core",
+                    "waypoints": [actual_robot_xy],
+                    "local_waypoints": [[0.0, 0.0]],
+                }
+                body_command = self._fallback_body_command_to_intruder(
+                    entity.pose,
+                    intruder_xy,
+                    actual_robot_xy,
+                    hold_heading_only=(hold_heading_only or navdp_heading_only_fallback),
+                )
+            else:
+                body_command = self._body_command_from_navdp_path(entity.pose, actual_robot_xy, path)
             if current_sim_time - self._last_locomotion_sim_time.get(robot_id, float("-inf")) < self.control_period:
                 continue
             try:
-                body_command = self._body_command_from_navdp_path(entity.pose, actual_robot_xy, path)
                 motion = self._post_json(
                     f"{self.locomotion_url}/command",
                     {
@@ -474,6 +495,11 @@ class CoreControlNode(Node):
                 "subgoal": subgoal["subgoal"],
                 "body_velocity_command": body_command,
                 "path": path.get("waypoints", []),
+                "marl_mode": marl_entry.get("mode") if isinstance(marl_entry, dict) else None,
+                "core_fallback_active": bool(core_fallback_active),
+                "close_range_fallback": bool(close_range_fallback),
+                "hold_heading_only": bool(hold_heading_only or navdp_heading_only_fallback),
+                "navdp_heading_only_fallback": bool(navdp_heading_only_fallback),
             }
             self.state_mirror.update_locomotion_output(
                 robot_id,
@@ -484,6 +510,11 @@ class CoreControlNode(Node):
                     "action_scale": motion.get("action_scale"),
                     "controller": motion.get("controller"),
                     "target": motion.get("target"),
+                    "marl_mode": marl_entry.get("mode") if isinstance(marl_entry, dict) else None,
+                    "core_fallback_active": bool(core_fallback_active),
+                    "close_range_fallback": bool(close_range_fallback),
+                    "hold_heading_only": bool(hold_heading_only or navdp_heading_only_fallback),
+                    "navdp_heading_only_fallback": bool(navdp_heading_only_fallback),
                 },
                 now_sec=time.monotonic(),
             )
@@ -657,7 +688,7 @@ class CoreControlNode(Node):
         return result if isinstance(result, dict) else None
 
     @staticmethod
-    def _marl_subgoal_xy(marl_result: dict[str, Any] | None, robot_id: str) -> list[float] | None:
+    def _marl_subgoal_entry(marl_result: dict[str, Any] | None, robot_id: str) -> dict[str, Any] | None:
         if not isinstance(marl_result, dict):
             return None
         subgoals = marl_result.get("subgoals")
@@ -666,10 +697,25 @@ class CoreControlNode(Node):
         robot = subgoals.get(robot_id)
         if not isinstance(robot, dict):
             return None
+        return robot
+
+    @classmethod
+    def _marl_subgoal_xy(cls, marl_result: dict[str, Any] | None, robot_id: str) -> list[float] | None:
+        robot = cls._marl_subgoal_entry(marl_result, robot_id)
+        if not isinstance(robot, dict):
+            return None
         subgoal = robot.get("subgoal")
         if not isinstance(subgoal, list | tuple) or len(subgoal) < 2:
             return None
         return [round(float(subgoal[0]), 4), round(float(subgoal[1]), 4)]
+
+    def _marl_look_at_xy(robot_entry: dict[str, Any] | None) -> list[float] | None:
+        if not isinstance(robot_entry, dict):
+            return None
+        look_at = robot_entry.get("look_at")
+        if not isinstance(look_at, list | tuple) or len(look_at) < 2:
+            return None
+        return [round(float(look_at[0]), 4), round(float(look_at[1]), 4)]
 
     def _marl_payload(self) -> dict[str, Any] | None:
         perception = self._latest_perception()
@@ -694,6 +740,7 @@ class CoreControlNode(Node):
                     "position": robot_xy,
                     "velocity": velocity,
                 }
+            robot_state["yaw"] = round(self._pose_yaw(entity.pose), 4)
             robots[robot_id] = robot_state
 
         sim_state = self.state.latest_simulation_state or {}
@@ -1138,6 +1185,41 @@ class CoreControlNode(Node):
                 return self._local_point_to_body_velocity(target)
 
         return self._body_command_from_path(pose, robot_xy, path)
+
+    @staticmethod
+    def _path_endpoint_span_below(path: dict[str, Any] | None, threshold_m: float) -> bool:
+        if not isinstance(path, dict):
+            return False
+        waypoints = path.get("waypoints")
+        if not isinstance(waypoints, list) or not waypoints:
+            return True
+        first = waypoints[0]
+        last = waypoints[-1]
+        if not isinstance(first, list | tuple) or len(first) < 2:
+            return True
+        if not isinstance(last, list | tuple) or len(last) < 2:
+            return True
+        return math.hypot(float(last[0]) - float(first[0]), float(last[1]) - float(first[1])) < float(threshold_m)
+
+    def _fallback_body_command_to_intruder(
+        self,
+        pose: PoseStamped | None,
+        target_xy: list[float] | tuple[float, float],
+        robot_xy: list[float],
+        hold_heading_only: bool,
+    ) -> list[float]:
+        body_xy = self._world_point_to_body_xy(pose, target_xy, robot_xy)
+        dx = float(body_xy[0])
+        dy = float(body_xy[1])
+        if math.hypot(dx, dy) < 1.0e-6:
+            return [0.0, 0.0, 0.0]
+        heading_error = math.atan2(dy, dx)
+        if abs(heading_error) < 1.0e-3:
+            wz = 0.0
+        else:
+            wz = 1.0 if heading_error > 0.0 else -1.0
+        vx = 0.0 if hold_heading_only else 0.8
+        return [round(vx, 4), 0.0, round(wz, 4)]
 
     def _local_point_to_body_velocity(self, target_xy: list[float] | tuple[float, float]) -> list[float]:
         x = float(target_xy[0])

@@ -1,0 +1,22 @@
+name: sim2real
+channels:
+  - conda-forge
+  - robostack-staging
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pillow
+  - fastapi
+  - uvicorn
+  - pyyaml
+  - setuptools
+  - colcon-common-extensions
+  - ros-humble-ros-base
+  - ros-humble-rosidl-generator-dds-idl
+  - ros-humble-sensor-msgs
+  - ros-humble-geometry-msgs
+  - ros-humble-nav-msgs
+  - ros-humble-std-msgs
+  - ros-humble-launch
+  - ros-humble-launch-ros

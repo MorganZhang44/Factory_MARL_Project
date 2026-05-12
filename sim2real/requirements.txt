@@ -1,0 +1,16 @@
+# Python-side dependencies for the sim2real stack.
+#
+# Use from project root or from sim2real/:
+#   pip install -r sim2real/requirements.txt
+# or
+#   cd sim2real && pip install -r requirements.txt
+#
+# The editable SDK path below is resolved relative to this file.
+
+fastapi
+uvicorn
+numpy
+pillow
+pyyaml
+cyclonedds==0.10.2
+-e ./unitree_sdk2_python
