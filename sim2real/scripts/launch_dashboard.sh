@@ -68,6 +68,14 @@ if [[ -z "${UNITREE_ROS2_SETUP}" && -f "${SIM2REAL_ROOT}/unitree_ros2/cyclonedds
   UNITREE_ROS2_SETUP="${SIM2REAL_ROOT}/unitree_ros2/cyclonedds_ws/install/setup.bash"
 fi
 
+if [[ -z "${UNITREE_ROS2_SETUP}" && -d "${SIM2REAL_ROOT}/unitree_ros2/cyclonedds_ws" ]]; then
+  echo "Unitree ROS2 install/setup.bash was not found. Building the local message workspace first."
+  "${SIM2REAL_ROOT}/scripts/build_unitree_ros2.sh"
+  if [[ -f "${SIM2REAL_ROOT}/unitree_ros2/cyclonedds_ws/install/setup.bash" ]]; then
+    UNITREE_ROS2_SETUP="${SIM2REAL_ROOT}/unitree_ros2/cyclonedds_ws/install/setup.bash"
+  fi
+fi
+
 if [[ -n "${UNITREE_ROS2_SETUP}" ]]; then
   echo "Sourcing Unitree ROS2 environment: ${UNITREE_ROS2_SETUP}"
   set +u

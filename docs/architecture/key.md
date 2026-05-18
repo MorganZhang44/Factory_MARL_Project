@@ -696,7 +696,7 @@ Configuration should be separated from code.
 Recommended structure:
 
 ```text
-configs/
+configs/ (historical; active MAPPO research configs now live under `marl/research/configs/`)
   system/
   simulation/
   perception/

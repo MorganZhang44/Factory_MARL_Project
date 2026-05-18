@@ -3,7 +3,6 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONDA_ENV="${SIMULATION_CONDA_ENV:-isaaclab51}"
-RUNTIME="${SIMULATION_RUNTIME:-legacy}"
 
 run_conda_clean() {
   CONDA_NO_PLUGINS=true env -u PYTHONPATH -u PYTHONHOME conda run -n "${CONDA_ENV}" "$@"
@@ -48,15 +47,23 @@ while [[ "${IDX}" -lt "${#ARGS[@]}" ]]; do
   if [[ "${arg}" == "--runtime" ]]; then
     IDX=$((IDX + 1))
     if [[ "${IDX}" -ge "${#ARGS[@]}" ]]; then
-      echo "Missing value for --runtime. Use 'legacy', 'rewrite', or 'rebuild'." >&2
+      echo "Missing value for --runtime. Only 'legacy' is supported." >&2
       exit 1
     fi
-    RUNTIME="${ARGS[${IDX}]}"
+    if [[ "${ARGS[${IDX}]}" != "legacy" ]]; then
+      echo "Unsupported simulation runtime '${ARGS[${IDX}]}'." >&2
+      echo "Only 'legacy' is kept in this repository." >&2
+      exit 1
+    fi
     IDX=$((IDX + 1))
     continue
   fi
   if [[ "${arg}" == --runtime=* ]]; then
-    RUNTIME="${arg#--runtime=}"
+    if [[ "${arg#--runtime=}" != "legacy" ]]; then
+      echo "Unsupported simulation runtime '${arg#--runtime=}'." >&2
+      echo "Only 'legacy' is kept in this repository." >&2
+      exit 1
+    fi
     IDX=$((IDX + 1))
     continue
   fi
@@ -67,18 +74,9 @@ while [[ "${IDX}" -lt "${#ARGS[@]}" ]]; do
   IDX=$((IDX + 1))
 done
 
-if [[ "${RUNTIME}" == "rewrite" ]]; then
-  ENTRYPOINT="simulation/standalone/run_environment_rewrite.py"
-elif [[ "${RUNTIME}" == "rebuild" ]]; then
-  ENTRYPOINT="simulation/standalone/run_environment_rebuild.py"
-elif [[ "${RUNTIME}" != "legacy" ]]; then
-  echo "Unsupported simulation runtime '${RUNTIME}'. Use 'legacy', 'rewrite', or 'rebuild'." >&2
-  exit 1
-fi
-
 if [[ "${HAS_DEVICE_ARG}" -eq 0 ]]; then
   FILTERED_ARGS=(--device cuda:0 "${FILTERED_ARGS[@]}")
 fi
 
-echo "[simulation] runtime=${RUNTIME} entrypoint=${ENTRYPOINT}" >&2
+echo "[simulation] runtime=legacy entrypoint=${ENTRYPOINT}" >&2
 CONDA_NO_PLUGINS=true exec env -u PYTHONHOME conda run --no-capture-output -n "${CONDA_ENV}" python "${ENTRYPOINT}" "${FILTERED_ARGS[@]}"

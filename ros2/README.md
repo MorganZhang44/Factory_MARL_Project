@@ -7,7 +7,6 @@ It must run only in the `ros2` environment when used directly.
 The source packages stay with the module that owns their logic:
 
 * `core/ros2/factory_core`: Core Communication Layer ROS2 node
-* `simulation/ros2/factory_sim_bridge`: Simulation-side ROS2 bridge
 * `ros2/factory_bringup`: launch files and integration bringup
 
 Create the ROS2 conda environment:

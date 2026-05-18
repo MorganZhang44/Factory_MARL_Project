@@ -1,131 +1,52 @@
-# 04 · 奖励函数设计
+# 04 · Reward Design
 
-**对应文件：** `marl/rewards/pursuit_reward.py`  
-**对应配置：** `configs/mappo_config.yaml → reward:`
+**Primary file:** `marl/research/marl/rewards/pursuit_reward.py`  
+**Primary config:** `marl/research/configs/mappo_config.yaml`
 
-这是整个项目**最核心的设计部分**，也是迭代次数最多的模块。
+Reward design is the most important part of the research stack because it decides what kind of teamwork the policy actually learns.
 
----
+## Reward Components
 
-## 最终奖励公式
+The current reward mixes six pieces:
 
-```python
-# marl/rewards/pursuit_reward.py  →  def compute():
+- progress reward
+- pinning reward
+- capture reward
+- time bonus
+- proximity penalty
+- step penalty
 
-total = r_progress      # 靠近奖励（密集）
-      + r_pin           # 黏人奖励（持续）
-      + r_capture       # 合围成功奖励（稀疏）
-      + r_time_bonus    # 时间效率奖励
-      + r_proximity     # 碰撞惩罚
-      + r_step          # 步数惩罚
-```
+## Progress Reward
 
----
+This gives dense reward whenever the two robots, on average, reduce their distance to the intruder. It is the baseline chase incentive.
 
-## 各奖励项详解
+## Pinning Reward
 
-### 1. `r_progress`：密集进度奖励
+This adds persistent reward when a robot stays close to the intruder. The purpose is to encourage one robot to commit and pressure the target instead of both robots waiting for a perfect symmetric setup.
 
-```python
-progress   = mean(dists_before - dists_after)   # 每步平均靠近了多少
-r_progress = w_distance * progress * 10.0       # w_distance = 1.0
-```
+## Capture Reward
 
-每步只要两只狗的平均距离缩短了，就加分。这是最基础的"追人"激励。
+This is the sparse high-value reward that triggers when both robots enter the capture radius and form a sufficiently wide angle around the target. Better enclosure geometry yields a higher score.
 
----
+## Time Bonus
 
-### 2. `r_pin`：黏人奖励（持续奖励）
+Capture reward is paired with a time-efficiency bonus. Faster capture is worth more, which reduces the tendency to stall for an ideal formation.
 
-```python
-r_pin = 0.0
-for d in dists_after:
-    if d <= 2.0:           # 距离 Intruder 2 米以内
-        r_pin += w_pin     # w_pin = 2.0，每只狗每步 +2
-```
+## Proximity Penalty
 
-**设计动机**：让 AI 学会"先冲上去贴住目标，拿持续分，等队友包抄"。
-没有这个奖励，AI 倾向于两只狗都保持距离，观望等待完美时机。
+This discourages the two robots from collapsing into the same physical region. It helps preserve role separation and makes enclosing behavior easier to learn.
 
----
+## Step Penalty
 
-### 3. `r_capture`：合围成功奖励
+A small negative reward per step pushes the policy away from needless delay.
 
-```python
-if d1 <= 1.5 and d2 <= 1.5:         # 两狗都在 1.5m 内
-    cos_theta = dot(v1, v2) / (d1 * d2)
-    if cos_theta <= 0.0:             # 夹角 ≥ 90°
-        angle_quality = (1.0 - cos_theta) / 2.0   # 0.5（90°) ~ 1.0（180°）
-        r_capture = w_capture * angle_quality      # w_capture = 200.0
-        # 最高得分：完美对角线 180° 包围 → +200 分
-        # 最低得分：恰好 90° 夹角    → +100 分
-```
+## Why This Combination Works
 
-**夹角加成**：越接近 180 度的对角线包围，分数越高，激励 AI 追求更优质的合围阵型。
+Together, these terms shape a specific behavior:
 
----
+- approach the target consistently
+- keep one robot engaged at close range
+- preserve separation between teammates
+- finish the enclosure quickly once the chance appears
 
-### 4. `r_time_bonus`：时间效率奖励
-
-```python
-# 只在 r_capture 触发时同步计算
-time_fraction = (max_steps - step_count) / max_steps   # 剩余步数比例
-r_time_bonus  = w_time * time_fraction                 # w_time = 100.0
-```
-
-| 抓捕时刻 | time_fraction | r_time_bonus |
-|----------|--------------|--------------|
-| 第 1 步  | 499/500 ≈ 1.0 | **+100 分** |
-| 第 100 步 | 400/500 = 0.8 | +80 分 |
-| 第 250 步 | 250/500 = 0.5 | +50 分 |
-| 第 499 步 | 1/500 ≈ 0   | ≈ 0 分 |
-
-**设计动机**：解决"AI 磨蹭绕圈等最佳阵型"的问题。
-每磨蹭 10 步，不只扣 1 分（`r_step × 10`），还损失 2 分时间奖金，总代价 **3 分**，有效逼迫 AI 速战速决。
-
----
-
-### 5. `r_proximity`：重叠惩罚
-
-```python
-d_agents = dist(agent_0, agent_1)
-if d_agents < sep_threshold:     # sep_threshold = 1.5m
-    r_proximity = w_proximity * (sep_threshold - d_agents)  # w_proximity = -0.5
-```
-
-防止两只狗堆在一起，保持最小间距，便于从两个方向包抄。
-
----
-
-### 6. `r_step`：步数惩罚
-
-```python
-r_step = w_step   # w_step = -0.1，每步固定扣 0.1 分
-```
-
----
-
-## 奖励权重配置
-
-```yaml
-# configs/mappo_config.yaml
-reward:
-  w_distance:           1.0     # r_progress 权重
-  w_capture:          200.0     # r_capture 权重（最大奖励）
-  w_step:              -0.1     # 步数惩罚
-  w_proximity:         -0.5     # 重叠惩罚
-  separation_threshold: 1.5     # 重叠判定阈值（米）
-  w_pin:               2.0      # 黏人奖励权重
-  w_time:            100.0      # 时间效率奖励权重
-```
-
----
-
-## 奖励函数迭代历史
-
-| 版本 | 主要变化 | 问题/结果 |
-|------|---------|-----------|
-| v1 | 单狗触碰即 Capture，per-step 角度惩罚 | AI "Reward Hacking"：原地不动等最佳角度 |
-| v2 | 改为双人合围规则 + 加入 `r_pin` | AI 学会"主动贴身"，不再原地等待 |
-| v3 | 加入 LiDAR 观测（`obs_dim: 13→21`） | AI 不再进入死胡同 |
-| v4（当前）| 加入 `r_time_bonus` | AI 速战速决，MeanR 从 +550 提升至 +850 |
+That mix was necessary to move the policy from naive chasing toward deliberate cooperative capture.

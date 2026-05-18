@@ -1,81 +1,90 @@
 # Sim2Real
 
-`sim2real/` 现在是一条独立的真机接入线，目标是先把 Unitree Go2 的真实状态、传感器和相机稳定接进现有项目风格的 `core + dashboard`，再逐步往控制和更复杂模块扩展。
+`sim2real/` is now a standalone real-robot integration line for Unitree Go2.
+Its goal is to bring real robot state, sensors, and camera streams into the
+project’s existing `core + dashboard` style, then grow outward toward more
+advanced control and module integration.
 
-这套目录现在按“**只拿走 `sim2real/` 这一整个文件夹**”来组织：
+The directory is intentionally organized so that you can move the entire
+`sim2real/` folder as one self-contained subproject:
 
-- 启动脚本在 `sim2real/scripts/`
-- ROS2 包在 `sim2real/ros2/`
-- Unitree ROS2 消息副本在 `sim2real/unitree_ros2/`
-- Unitree Python SDK 副本在 `sim2real/unitree_sdk2_python/`
+- startup scripts live in `sim2real/scripts/`
+- ROS2 packages live in `sim2real/ros2/`
+- a local Unitree ROS2 copy lives in `sim2real/unitree_ros2/`
+- a local Unitree Python SDK copy lives in `sim2real/unitree_sdk2_python/`
 
-也就是说，当前运行不再依赖仓库根目录下其他业务模块（`simulation/`、`marl/`、`navdp/`、`locomotion/`、`perception/`）。
+The runtime no longer depends on top-level project modules such as
+`simulation/`, `marl/`, `navdp/`, `locomotion/`, or `perception/`.
 
-## 当前结构
+## Structure
 
 - `ros2/factory_core_sim2real`
-  - `sim2real` 专用的 core 副本
-  - 负责订阅真机 topic、汇总状态、提供 `/api/state` 和 websocket
+  - sim2real-specific Core derivative
+  - subscribes to real robot topics, aggregates state, and exposes `/api/state`
+    plus a websocket feed
 - `ros2/factory_bringup_sim2real`
-  - `sim2real` 专用 launch
+  - sim2real-specific launch package
 - `unitree_ros2`
-  - 官方 ROS2 消息/示例仓库的本地副本
+  - local copy of the official ROS2 message / example repository
 - `unitree_sdk2_python`
-  - 官方 Python SDK 的本地副本
+  - local copy of the official Python SDK
 - `scripts/go2_forward_back_test.py`
-  - 最小真机运动测试脚本
+  - minimal real-robot motion validation script
 
-## 当前已接入的数据
+## Connected Data
 
-### 第一批
+### First batch
 
 - `/sportmodestate`
 - `/utlidar/robot_pose`
 - `/utlidar/robot_odom`
 
-### 第二批
+### Second batch
 
 - `/utlidar/imu`
 - `/utlidar/cloud`
 
-### 相机
+### Camera
 
-相机没有直接走 `/frontvideostream` 解码，而是走官方推荐的 `VideoClient`：
+The camera path does not decode `/frontvideostream` directly. It uses the
+officially recommended `VideoClient` path instead:
 
-- `camera_worker.py` 用 `unitree_sdk2py.go2.video.video_client.VideoClient`
-- 周期性拉取 JPEG 帧
-- 写到本地缓存：
+- `camera_worker.py` uses
+  `unitree_sdk2py.go2.video.video_client.VideoClient`
+- it pulls JPEG frames periodically
+- it writes the latest frame to:
   - `/tmp/factory_sim2real/front_camera.jpg`
-- `core_control_node` 定时读取这张缓存图，喂给 dashboard
+- `core_control_node` reads that cached image and feeds it to the dashboard
 
-这样做的原因是：
+This split is intentional:
 
-- `VideoClient` 单独跑是稳定的
-- 把 `VideoClient` 和 `rclpy` 硬塞进同一个 ROS2 节点时，`ChannelFactoryInitialize` 容易打架
-- 分成独立 worker 后更稳，也更好排障
+- `VideoClient` is stable when run on its own
+- mixing `VideoClient` and `rclpy` in the same ROS2 node can conflict around
+  `ChannelFactoryInitialize`
+- a dedicated worker is easier to debug and more reliable
 
-## 当前页面能力
+## Dashboard Capabilities
 
-`sim2real` dashboard 现在已经能显示：
+The current sim2real dashboard shows:
 
-- 机器人位姿
-- `sportmodestate` 状态
-- IMU 状态
-- LiDAR 点云俯视图
-  - 按高度着色
-- 前相机画面
+- robot pose
+- `sportmodestate`
+- IMU state
+- LiDAR top-down point-cloud view
+  - height-colored
+- front camera image
 
-默认地址：
+Default dashboard address:
 
 - `http://127.0.0.1:8770/`
 
-Core 状态 API：
+Core state API:
 
 - `http://127.0.0.1:8765/`
 
-## 环境准备
+## Environment Setup
 
-推荐直接用独立环境：
+Recommended setup:
 
 ```bash
 cd sim2real
@@ -83,17 +92,17 @@ cd sim2real
 conda activate sim2real
 ```
 
-`sim2real/environment.yml` 提供 conda 基础环境；
-`sim2real/requirements.txt` 提供 pip 侧依赖。
+`sim2real/environment.yml` defines the conda base environment.
+`sim2real/requirements.txt` adds pip-side dependencies.
 
-如果你已经在 `sim2real` 环境里，只需要：
+If the environment already exists:
 
 ```bash
 cd sim2real
 pip install -r requirements.txt
 ```
 
-## 启动 dashboard
+## Launching the Dashboard
 
 ```bash
 conda activate sim2real
@@ -101,27 +110,29 @@ cd sim2real
 ./scripts/launch_dashboard.sh
 ```
 
-这个脚本会自动做这些事：
+This script will:
 
-1. 激活 `sim2real` conda 环境
-2. 配置 CycloneDDS
-3. source 本目录内的 `unitree_ros2/cyclonedds_ws/install/setup.bash`
-4. build `ros2`
-5. launch `factory_bringup_sim2real`
+1. activate the `sim2real` conda environment
+2. configure CycloneDDS
+3. auto-build the local `unitree_ros2` message workspace if
+   `unitree_ros2/cyclonedds_ws/install/setup.bash` is missing
+4. source that `setup.bash`
+5. build the local `ros2` workspace
+6. launch `factory_bringup_sim2real`
 
-默认网卡：
+Default network interface:
 
 - `eno1`
 
-如需覆盖：
+Override example:
 
 ```bash
 SIM2REAL_NET_IFACE=enp6s0 ./scripts/launch_dashboard.sh
 ```
 
-## 构建 Unitree ROS2 消息工作区
+## Building the Unitree ROS2 Message Workspace
 
-如果项目内的 `unitree_ros2` 需要重新编：
+If the local `unitree_ros2` copy needs rebuilding:
 
 ```bash
 conda activate sim2real
@@ -129,22 +140,26 @@ cd sim2real
 ./scripts/build_unitree_ros2.sh
 ```
 
-## 真机运动测试
+The repository intentionally does not keep generated
+`unitree_ros2/cyclonedds_ws/build/install/log` or `ros2/workspace/build/install/log`
+artifacts. `launch_dashboard.sh` will rebuild what it needs.
 
-当前提供了一个非常小的运动脚本：
+## Minimal Motion Test
+
+The current minimal validation script is:
 
 - `scripts/go2_forward_back_test.py`
 
-它会执行：
+It performs:
 
 1. `StandUp()`
 2. `BalanceStand()`
-3. 前进 `0.1 m/s` 持续 `1 秒`
-4. 后退 `0.1 m/s` 持续 `1 秒`
+3. forward motion at `0.1 m/s` for `1 s`
+4. backward motion at `0.1 m/s` for `1 s`
 5. `StopMove()`
 6. `Damp()`
 
-运行：
+Run:
 
 ```bash
 conda activate sim2real
@@ -152,13 +167,13 @@ cd sim2real
 python scripts/go2_forward_back_test.py --iface eno1
 ```
 
-如果狗已经站好，可以跳过站立步骤：
+Skip stand-up if the robot is already standing:
 
 ```bash
 python scripts/go2_forward_back_test.py --iface eno1 --skip-standup
 ```
 
-## 关键文件
+## Key Files
 
 - `ros2/factory_core_sim2real/factory_core_sim2real/control_node.py`
 - `ros2/factory_core_sim2real/factory_core_sim2real/state_mirror.py`
@@ -167,25 +182,25 @@ python scripts/go2_forward_back_test.py --iface eno1 --skip-standup
 - `ros2/factory_bringup_sim2real/launch/core_dashboard.launch.py`
 - `scripts/launch_dashboard.sh`
 
-## 当前已知事实
+## Current Facts
 
-- 点云当前默认读取：
+- default point-cloud source:
   - `/utlidar/cloud`
-- 雷达 frame：
+- LiDAR frame:
   - `utlidar_lidar`
-- 前相机当前通过 SDK 成功拉到：
+- front camera currently retrieved through the SDK as:
   - `1920 x 1080`
   - `jpeg`
-- dashboard 当前应能看到：
+- the dashboard should currently show:
   - `pose=True`
   - `status=True`
   - `camera=True`
   - `imu=True`
   - `lidar_points=True`
 
-## 后续自然方向
+## Natural Next Steps
 
-- 把 `/wirelesscontroller` 接进页面做人工接管观测
-- 给相机和点云加录制/快照功能
-- 把 `SportClient` 控制进一步封成 `sim2real` 内部 bridge
-- 再决定是否把现有更高层模块接进真机链
+- add `/wirelesscontroller` to the UI for manual takeover visibility
+- add snapshot / recording support for camera and point clouds
+- wrap `SportClient` control more cleanly inside the sim2real runtime
+- decide whether higher-level modules should be connected to the real-robot line

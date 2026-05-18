@@ -17,7 +17,7 @@ There are currently two simulation lines in this repo:
     [simulation/standalone/validate_slam_scene.py](/home/yyz/projects/Factory_MARL_Project/simulation/standalone/validate_slam_scene.py)
 * `rewrite`
   * entrypoint:
-    [simulation/standalone/run_environment_rewrite.py](/home/yyz/projects/Factory_MARL_Project/simulation/standalone/run_environment_rewrite.py)
+    This historical note refers to the removed rewrite runtime. The repository now keeps only the `legacy` simulation path rooted at [validate_slam_scene.py](/home/yyz/projects/Factory_MARL_Project/simulation/standalone/validate_slam_scene.py).
 
 There are also three external reference lines that influenced the work:
 

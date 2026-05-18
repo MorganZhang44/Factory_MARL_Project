@@ -1,8 +1,13 @@
 # MARL Module
 
-`marl` is the standalone multi-agent decision module.
+`marl` is the standalone multi-agent decision module used by the runtime
+system. The directory is intentionally split into three parts:
 
-## Role
+1. the online service entrypoint,
+2. the default runtime checkpoint used by the online service,
+3. a separate `research/` tree for training and offline experiments.
+
+## Runtime Role
 
 The runtime module takes:
 
@@ -12,29 +17,70 @@ The runtime module takes:
 
 and returns:
 
-- one world-frame `subgoal` per robot
+- one world-frame `subgoal` per robot,
+- role assignment metadata,
+- fallback/debug status used by `core` and the dashboard.
 
-Internally, the current MAPPO policy consumes a `13D` observation per robot and
-predicts a world-frame relative offset. `marl_service.py` converts that offset
-into the absolute world-frame `subgoal` returned to `core`.
+At runtime, `marl_service.py` builds the current observation, assigns roles,
+loads the default `v13` checkpoint when available, and falls back to geometric
+closing logic when policy inference is disabled or unavailable.
+
+## Directory Layout
+
+```text
+marl/
+├── marl_service.py
+├── README.md
+├── environment.yml
+├── Dockerfile
+├── v13_final.pt              # runtime checkpoint only
+└── research/                 # separate research/training tree
+```
 
 ## Runtime Boundary
 
-This module does **not** expose the training stack to the rest of the project.
-
-Training-oriented files such as:
-
-- `marl/trainers/`
-- `marl/buffers/`
-- `marl/rewards/`
-- `marl/envs/`
-
-remain internal research code.
-
-The system integration boundary is:
+The online integration boundary is:
 
 - `marl/marl_service.py`
 - `scripts/launch_marl.sh`
+
+The runtime service uses the in-tree default release at:
+
+```text
+marl/research
+```
+
+The runtime service loads the default checkpoint from:
+
+```text
+marl/v13_final.pt
+```
+
+In other words:
+
+- `research/` provides the policy and utility code imported by `marl_service.py`,
+- `v13_final.pt` is the runtime model file.
+
+## Research Tree
+
+All training-oriented code has been moved under:
+
+```text
+marl/research
+```
+
+That tree contains:
+
+- training entrypoints,
+- evaluation scripts,
+- MAPPO environment code,
+- policy/critic definitions,
+- rollout buffer,
+- rewards,
+- utility modules.
+
+This keeps the runtime surface small while preserving the full `v13` research
+stack in one place.
 
 ## Launch
 
@@ -59,13 +105,13 @@ By default the service listens on `http://127.0.0.1:8892`.
 
 ## Checkpoints
 
-Default checkpoint path:
+Default runtime checkpoint:
 
 ```text
-results/checkpoints/final.pt
+marl/v13_final.pt
 ```
 
-Backward-compatible fallback path:
+Backward-compatible fallback checkpoint:
 
 ```text
 marl/checkpoints/mappo_latest.pt

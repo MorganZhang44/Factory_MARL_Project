@@ -11,7 +11,7 @@ from rclpy.node import Node
 
 
 HTML_PAGE = """<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -158,7 +158,7 @@ HTML_PAGE = """<!doctype html>
 <body>
   <header>
     <h1>Sim2Real Robot Dashboard</h1>
-    <div id="connection" class="note">正在连接 core websocket</div>
+    <div id="connection" class="note">Connecting to core websocket</div>
   </header>
   <main>
     <section class="panel">
@@ -167,10 +167,10 @@ HTML_PAGE = """<!doctype html>
       <div class="grid" id="metric-grid"></div>
       <div>
         <div class="note" style="margin-bottom:8px;">Front Camera</div>
-        <div id="camera-box" class="image-box"><span class="note">等待相机图像</span></div>
+        <div id="camera-box" class="image-box"><span class="note">Waiting for camera image</span></div>
       </div>
       <div>
-        <div class="note" style="margin-bottom:8px;">LiDAR 点云俯视图</div>
+        <div class="note" style="margin-bottom:8px;">LiDAR top-down point cloud</div>
         <canvas id="lidar-canvas" width="420" height="260"></canvas>
       </div>
       <table>
@@ -179,7 +179,7 @@ HTML_PAGE = """<!doctype html>
     </section>
     <section class="panel">
       <div class="title">Raw Snapshot</div>
-      <div class="note">这里保留原始镜像数据，方便后面继续接更多真机字段。</div>
+      <div class="note">The raw mirrored snapshot is kept here so additional real-robot fields can be added later.</div>
       <pre id="raw-json">{}</pre>
     </section>
   </main>
@@ -379,7 +379,7 @@ function renderState(state) {
   if (camera.image) {
     cameraBox.innerHTML = `<img src="${camera.image}" alt="front camera" />`;
   } else {
-    cameraBox.innerHTML = `<span class="note">等待相机图像</span>`;
+    cameraBox.innerHTML = `<span class="note">Waiting for camera image</span>`;
   }
 
   drawLidar(document.getElementById("lidar-canvas"), lidarPoints);
@@ -393,17 +393,17 @@ function renderState(state) {
 function connect() {
   const status = document.getElementById("connection");
   const ws = new WebSocket(CORE_WS_URL);
-  ws.onopen = () => { status.textContent = "已连接 core websocket"; };
+  ws.onopen = () => { status.textContent = "Connected to core websocket"; };
   ws.onclose = () => {
-    status.textContent = "连接断开，1s 后重连";
+    status.textContent = "Connection lost, retrying in 1s";
     setTimeout(connect, 1000);
   };
-  ws.onerror = () => { status.textContent = "websocket 错误"; };
+  ws.onerror = () => { status.textContent = "WebSocket error"; };
   ws.onmessage = (event) => {
     try {
       renderState(JSON.parse(event.data));
     } catch (err) {
-      status.textContent = "状态解析失败";
+      status.textContent = "Failed to parse state update";
       console.error(err);
     }
   };

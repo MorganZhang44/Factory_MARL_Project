@@ -8,15 +8,14 @@ It must run only in the `isaaclab51` environment.
 ## Primary entry point
 
 ```bash
-./scripts/launch_simulation.sh --runtime legacy --keep-open
+./scripts/launch_simulation.sh --keep-open
 ```
 
-The launcher supports three runtimes:
+The repository now keeps only the `legacy` runtime:
 
 ```bash
+./scripts/launch_simulation.sh
 ./scripts/launch_simulation.sh --runtime legacy
-./scripts/launch_simulation.sh --runtime rewrite
-./scripts/launch_simulation.sh --runtime rebuild
 ```
 
 Or with an environment variable:
@@ -28,25 +27,19 @@ SIMULATION_RUNTIME=legacy ./scripts/launch_simulation.sh
 The launcher uses `conda run --no-capture-output` with `PYTHONUNBUFFERED=1`, so
 Isaac Sim logs and Python tracebacks should appear directly in the terminal.
 
-Runtime mapping:
+Current runtime mapping:
 
 * `legacy`: launches `simulation/standalone/validate_slam_scene.py`
-* `rewrite`: launches `simulation/standalone/run_environment_rewrite.py`
-* `rebuild`: launches `simulation/standalone/run_environment_rebuild.py`
 
 Current recommendation:
 
 * use `legacy` for end-to-end stack tests
-* treat `rewrite` and `rebuild` as parallel lines
 
 By default the standalone Isaac Sim entry point publishes the current
 Simulation-Core ROS2 contract under `/factory/simulation`.
 
-Current ROS2-facing package:
-
-```text
-simulation/ros2/factory_sim_bridge
-```
+The `legacy` runtime publishes the current Simulation-Core ROS2 contract
+directly from `simulation/standalone/validate_slam_scene.py`.
 
 Responsibilities in Version 1:
 
@@ -84,8 +77,8 @@ Current status:
 Useful flags:
 
 ```bash
-./scripts/launch_simulation.sh --runtime legacy --keep-open
-./scripts/launch_simulation.sh --runtime legacy --keep-open --move-intruder
+./scripts/launch_simulation.sh --keep-open
+./scripts/launch_simulation.sh --keep-open --move-intruder
 ```
 
 Behavior:
@@ -116,7 +109,4 @@ In `compose.yaml`, the `simulation` service currently runs with:
 So the Docker simulation path is currently for headless stack testing, not GUI
 visual debugging.
 
-The current package includes `mock_sim_publisher` so the Core layer can be
-tested before Isaac Sim publishes real sensor data.
-
-The mock publisher is not the primary Simulation runtime.
+The current repository keeps only the active Isaac-Sim-driven `legacy` runtime.

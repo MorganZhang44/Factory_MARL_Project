@@ -1,73 +1,101 @@
 # Perception
 
-当前项目里的 `perception/` 是一个独立 HTTP 服务模块。
+`perception/` is an independent HTTP service module in the current project.
 
-它不直接启动 Isaac Sim，也不直接读取 scene。它吃的是 `core` 打包后的请求，
-对外提供：
+It does not launch Isaac Sim directly and does not read scenes on its own.
+Instead, it consumes requests packaged by `core` and exposes:
 
 - `GET /health`
 - `POST /estimate`
 
-入口文件：
+Entry point:
 
 - `perception/perception_service.py`
 
-## 当前保留的内容
+## Structure
 
-这一版仓库里保留的是当前主链真正会用到的部分：
+The module is organized into three layers:
 
 - `perception_service.py`
-  - 当前项目的 HTTP 适配层
+  - online HTTP adapter
 - `perception/perception/`
-  - 感知算法内核
+  - perception algorithm core
+- `environment/`
+  - static scene geometry and runtime data structures
+
+## What Is Kept
+
+The repository keeps the parts that are actually used by the current runtime:
+
+- `perception_service.py`
+  - the project’s HTTP integration layer
+- `perception/perception/pipeline.py`
+  - main perception pipeline assembly
+- `perception/perception/camera_detector.py`
+  - camera-side detection
+- `perception/perception/lidar_detector.py`
+  - LiDAR-side detection
+- `perception/perception/dog_localizer.py`
+  - robot self-localization logic
+- `perception/perception/fusion.py`
+  - multi-source fusion
+- `perception/perception/scan_matching.py`
+  - scan / point-cloud matching
+- `perception/perception/transforms.py`
+  - coordinate transforms
+- `perception/perception/types.py`
+  - internal perception data types
 - `environment/static_scene_geometry.py`
-  - 感知内核会用到的静态几何辅助
+  - static geometry helpers
 - `environment/types.py`
-  - 当前运行时使用的数据结构
+  - runtime-facing data structures
 - `environment.yml`
-  - `perception` 独立环境
+  - dedicated conda environment
 - `Dockerfile`
-  - `perception` Docker 镜像
+  - Docker image definition
 
-之前从 `newtest` / `newtest2` 迁过来的环境侧运行脚手架、可视化脚手架、独立
-pose server、视频转码等不再保留，因为当前项目主链没有用到它们。
+Older side experiments such as separate pose servers, visualization scaffolds,
+or unrelated migration leftovers are no longer part of the maintained runtime
+path.
 
-## 本机启动
+## Local Startup
 
 ```bash
 ./scripts/launch_perception.sh
 ```
 
-默认环境：
+Default environment:
 
 ```text
 perception
 ```
 
-## Docker 启动
+## Docker Startup
 
 ```bash
 docker compose up --build perception
 ```
 
-## 离线重放
+## Runtime Boundary
 
-可以用录下来的 perception request 直接离线回放：
-
-```bash
-python scripts/replay_perception_record.py output/perception_records --device cpu
-```
-
-## 运行边界
-
-当前推荐的数据流是：
+The recommended data flow is:
 
 ```text
 simulation -> core -> perception
 ```
 
-也就是说：
+Meaning:
 
-- `simulation` 发布原始传感器和状态
-- `core` 负责镜像、打包、节流和 HTTP 调用
-- `perception` 只负责估计输出
+- `simulation` publishes raw sensors and state
+- `core` mirrors, packages, throttles, and calls the HTTP adapter
+- `perception` is responsible only for state estimation output
+
+`perception` does not subscribe to ROS2 topics directly and does not read Isaac
+Sim directly. It relies on `core` to convert runtime state into
+`EnvironmentSensorFrame` payloads before handing them to the perception core.
+
+That boundary is intentional:
+
+- `simulation` owns raw data production
+- `core` owns orchestration and state mirroring
+- `perception` owns estimation logic

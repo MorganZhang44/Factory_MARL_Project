@@ -9,7 +9,6 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>factory_core</exec_depend>
-  <exec_depend>factory_sim_bridge</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

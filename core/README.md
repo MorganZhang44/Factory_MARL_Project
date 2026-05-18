@@ -16,6 +16,12 @@ Current ROS2-facing package:
 core/ros2/factory_core
 ```
 
+Current Python source package:
+
+```text
+core/factory_core
+```
+
 Responsibilities in Version 1:
 
 * subscribe to Simulation ROS2 topics
@@ -29,6 +35,48 @@ Responsibilities in Version 1:
 
 The Core module should not own Simulation logic. Simulation-side publishers live
 under `simulation/ros2`.
+
+## Directory layout
+
+The module is now intentionally split into three layers:
+
+### 1. Core source code
+
+```text
+core/factory_core
+```
+
+This directory contains the actual Python implementation:
+
+* `control_node.py`: main Core control node
+* `state_mirror.py`: state mirror used by the API and dashboard
+* `visualization_node.py`: dashboard frontend node
+
+### 2. Core ROS2 package wrapper
+
+```text
+core/ros2/factory_core
+```
+
+This directory contains the ROS2 package metadata and packaging files:
+
+* `package.xml`
+* `setup.py`
+* `setup.cfg`
+* `resource/factory_core`
+
+It exists so the Python source in `core/factory_core` can still be exposed as
+the ROS2 package `factory_core`.
+
+### 3. Project-level ROS2 bringup
+
+```text
+ros2/factory_bringup
+```
+
+This directory is outside the module and belongs to the project-level ROS2
+integration layer. It contains launch files that start Core together with the
+rest of the project.
 
 Run Core and Visualization together:
 
@@ -51,6 +99,18 @@ http://localhost:8765
 The dashboard reads the Core-owned state API through WebSocket. It must not
 subscribe to Simulation ROS2 topics and must not be inserted into the control
 loop.
+
+## Build path
+
+`launch_core_dashboard.sh` builds a ROS2 workspace using:
+
+* `core/ros2`
+* `ros2`
+
+This means:
+
+* `core/ros2` provides the `factory_core` ROS2 package
+* `ros2` provides the project-level bringup package and launch files
 
 Current dashboard pages include:
 

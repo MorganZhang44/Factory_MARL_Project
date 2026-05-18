@@ -2,8 +2,8 @@
 """MARL decision module HTTP adapter.
 
 This module owns only the runtime inference boundary for MARL. Training code
-stays in the research-oriented files under ``marl/`` and is not part of the
-system control path.
+stays in the research-oriented files under ``marl/research`` and is not part
+of the system control path.
 
 Input:
   - robot world-frame position/velocity for both agents
@@ -12,8 +12,9 @@ Input:
 Output:
   - one world-frame subgoal per robot
 
-Default runtime resources are aligned with the in-tree ``v13`` release under
-``marl/marl_pursuit_v13_final/release_v13_final``. If that checkpoint is
+Default runtime resources are aligned with the in-tree ``v13`` research code
+under ``marl/research`` and the runtime checkpoint under ``marl/v13_final.pt``.
+If that checkpoint is
 unavailable, the service falls back to a simple intercept offset so the module
 boundary can still be exercised end to end.
 """
@@ -35,14 +36,14 @@ import numpy as np
 
 MODULE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = MODULE_ROOT.parent
-V13_RELEASE_ROOT = MODULE_ROOT / "marl_pursuit_v13_final" / "release_v13_final"
+V13_RESEARCH_ROOT = MODULE_ROOT / "research"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(V13_RELEASE_ROOT))
+sys.path.insert(0, str(V13_RESEARCH_ROOT))
 from marl.utils.map_utils import ObstacleMap
 
-V13_ROOT = V13_RELEASE_ROOT
-DEFAULT_CHECKPOINT = V13_ROOT / "checkpoints" / "v13_final.pt"
+V13_ROOT = V13_RESEARCH_ROOT
+DEFAULT_CHECKPOINT = MODULE_ROOT / "v13_final.pt"
 LEGACY_CHECKPOINT = MODULE_ROOT / "checkpoints" / "mappo_latest.pt"
 DEFAULT_ROBOT_IDS = ("agent_1", "agent_2")
 PURSUER = 0

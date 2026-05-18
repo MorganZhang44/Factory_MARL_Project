@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """NavDP module HTTP adapter.
 
-Version 1 keeps the module boundary alive without depending on Core internals:
+The service exposes a stable planning boundary for the integration chain:
 Core sends a robot state plus a world-frame subgoal, this service returns a
-world-frame waypoint path. A real NavDP model can replace the planner behind
-the same endpoint later.
+world-frame waypoint path.
+
+The current implementation supports three planner layers:
+
+- real NavDP model inference using RGB + depth,
+- A* fallback using the shared obstacle map utilities,
+- straight-line fallback as the final safety net.
 """
 
 from __future__ import annotations
@@ -25,9 +30,9 @@ MODULE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = MODULE_ROOT.parent
 DEFAULT_CHECKPOINT = MODULE_ROOT / "checkpoints" / "navdp-cross-modal.ckpt"
 VENDOR_DIR = MODULE_ROOT / "vendor" / "navdp_baseline"
-ASTAR_RELEASE_ROOT = PROJECT_ROOT / "marl" / "marl_pursuit_v13_final" / "release_v13_final"
-if str(ASTAR_RELEASE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ASTAR_RELEASE_ROOT))
+ASTAR_CODE_ROOT = PROJECT_ROOT / "marl" / "research"
+if str(ASTAR_CODE_ROOT) not in sys.path:
+    sys.path.insert(0, str(ASTAR_CODE_ROOT))
 from marl.utils.astar import astar as astar_plan
 from marl.utils.map_utils import ObstacleMap
 

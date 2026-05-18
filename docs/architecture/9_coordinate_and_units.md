@@ -16,7 +16,7 @@ This ensures:
 * Type: **2D Cartesian**
 * Frame: `world`
 * Origin: **center of the map (0, 0)**
-* Authority: matches Isaac Lab world frame in `simulation/scenes/warehouse_scene_cfg.py`
+* Authority: matches Isaac Lab world frame in `simulation/scenes/slam_scene_cfg.py`
 
 ---
 
@@ -73,7 +73,7 @@ theta = angle (radians)
 
 ---
 
-## Static Obstacles (from warehouse_scene_cfg.py)
+## Static Obstacles (from slam_scene_cfg.py / legacy scene layout)
 
 All positions in world frame (center origin):
 
