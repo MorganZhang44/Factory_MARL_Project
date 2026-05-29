@@ -27,6 +27,10 @@ marl/v13_final.pt
 
 The dashboard also exposes MARL roles, outputs, and system health.
 
+## Demo Video
+
+<video src="./video.mp4" controls muted playsinline width="100%"></video>
+
 ## Module Layout
 
 Active modules:
